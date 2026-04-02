@@ -1,0 +1,11 @@
+# Reaction Rush — Python dependencies
+#
+# This project uses ONLY the Python standard library.
+# No third-party packages are required.
+#
+# Modules used:
+#   socket, threading, queue, time, json, random, argparse,
+#   tkinter, dataclasses, typing, traceback
+#
+# If you are on Linux and Tkinter is not installed:
+#   sudo apt install python3-tk
