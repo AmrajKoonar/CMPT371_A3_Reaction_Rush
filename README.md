@@ -1,2 +1,2 @@
-# CMPT371_A3_AIKillSwitch
+# CMPT371_A3_TCP_Reaction_Time_Game
 To be filled...
