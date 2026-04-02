@@ -1,2 +1,2 @@
-# CMPT371_A3_TCPReactionGame
+# CMPT371_A3_AIKillSwitch
 To be filled...
