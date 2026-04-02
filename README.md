@@ -1,2 +1,2 @@
-# CMPT371_A3_TCP_Reaction_Time_Game
+# CMPT371_A3_Reaction_Rush
 To be filled...
