@@ -386,7 +386,7 @@ class GameServer:
 
             self._run_round(rnd)
             # Leave a short gap so players can read the round results
-            time.sleep(3.0)
+            time.sleep(4.0)
 
         self._send_game_over()
 
