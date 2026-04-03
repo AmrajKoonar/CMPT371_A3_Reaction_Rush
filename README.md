@@ -3,7 +3,6 @@
 **Course:** CMPT 371 - Data Communications & Networking  
 **Instructor:** Mirza Zaeem Baig  
 **Semester:** Spring 2026  
-**RUBRIC NOTE:** As per submission guidelines, only one group member should submit the repository link on Canvas.
 
 ## **Group Members**
 
@@ -64,8 +63,7 @@ and edge cases in the current project scope:
   * **Limitation:** The client uses Tkinter, so Tkinter must be available on the machine running the client.
 
 ## **3. Video Demo**
-
-**RUBRIC NOTE:** Include a clickable link.  
+ 
 Our 2-minute video demonstration covering connection establishment, data
 exchange, gameplay, and process termination can be viewed below:  
 [**Add video link here**]
@@ -86,8 +84,6 @@ sudo apt install python3-tk
 ```
 
 ## **5. Step-by-Step Run Guide**
-
-**RUBRIC NOTE:** The grader should be able to copy-paste these commands.
 
 Open **3 terminals** in the project folder: one for the server and two for the
 clients.
@@ -170,10 +166,16 @@ JSON messages over TCP.
 
 ## **9. Academic Integrity & References**
 
-* **Code Origin:**  
-  * The project was built as a Python socket programming assignment using TCP sockets, threading, Tkinter, and JSON message passing.
-* **GenAI Usage:**  
-  * [Add ChatGPT / Copilot usage here]
-* **References:**  
-  * [Add websites, documentation, or other references here]
+* **Code Origin:**
+  * The gameplay idea was inspired by the [Human Benchmark: Reaction Time Test](https://humanbenchmark.com/tests/reactiontime).
+  * The networking logic, client-server protocol, lobby flow, scoring, and GUI were implemented by the group, with course materials and Python documentation used as references.
 
+* **GenAI Usage:**
+  * ChatGPT was used to help reorganize and polish parts of the `README.md`.
+  * Codex was used to assist with some UI/interface improvements in the client.
+
+* **References:**
+  * [Human Benchmark: Reaction Time Test](https://humanbenchmark.com/tests/reactiontime)
+  * [Python Socket Programming HOWTO](https://docs.python.org/3/howto/sockets.html)
+  * [Python `threading` documentation](https://docs.python.org/3/library/threading.html)
+  * [Python `tkinter` documentation](https://docs.python.org/3/library/tkinter.html)
