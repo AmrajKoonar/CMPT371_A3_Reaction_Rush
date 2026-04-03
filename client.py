@@ -1,29 +1,14 @@
 """
-client.py — Tkinter GUI client for Reaction Rush.
+client.py
 
-Responsibilities
-----------------
-* Connect to the game server via TCP.
-* Present a lobby where players can see who else has joined and ready up.
-* Display the reaction-time game: red screen → green screen → click!
-* Detect early clicks (false starts) and show the orange penalty screen.
-* Show per-round results, a running leaderboard, and the final winner.
-* Handle server disconnects and allow the player to quit cleanly.
+Tkinter client for Reaction Rush.
 
-Usage
------
-    python client.py
-
-Architecture
-------------
-* **Main (Tk) thread** — owns every widget; never touches the socket
-  directly (except for ``send_message`` which is a quick, non-blocking
-  ``sendall`` call).
-* **Receiver thread** — loops on ``receive_messages()`` and pushes parsed
-  dicts into a ``queue.Queue``.
-* **Queue poller** — a ``root.after()`` callback that drains the queue
-  every 50 ms and dispatches messages to handler methods on the main
-  thread, keeping Tkinter happy.
+This file handles:
+- connecting to the server
+- showing the lobby and ready state
+- showing the reaction screen
+- displaying round results and final results
+- handling disconnects from the server
 """
 
 import queue
@@ -42,9 +27,7 @@ from protocol import (
 )
 from utils import safe_close, format_ms
 
-# ============================================================================
-# Colour palette — keeps the UI consistent and easy to tweak
-# ============================================================================
+# UI colours
 BG_DARK    = "#1a1a2e"    # window / connect-screen background
 BG_PANEL   = "#16213e"    # lobby card background
 BG_ACCENT  = "#0f3460"    # info-bar strip
@@ -62,44 +45,35 @@ ORANGE_SCREEN = "#e67e22" # false-start penalty
 RESULT_BG  = "#2c3e50"    # round-result / leaderboard panel
 GOLD       = "#f1c40f"
 
-
-# ============================================================================
-# Client application
-# ============================================================================
-
 class ReactionRushClient:
-    """Tkinter-based GUI client for the Reaction Rush multiplayer game."""
+    """GUI client for the multiplayer game"""
 
-    # -----------------------------------------------------------------------
-    # Initialisation
-    # -----------------------------------------------------------------------
-
+    # Window setup and shared state
     def __init__(self) -> None:
-        # -- Tk root --
+        # Main window
         self.root = tk.Tk()
         self.root.title("Reaction Rush")
         self.root.geometry("820x620")
         self.root.minsize(640, 480)
         self.root.configure(bg=BG_DARK)
 
-        # -- Network state --
+        # Network state
         self.sock: Optional[socket.socket] = None
         self.connected: bool = False
         self.running: bool = True
         self.msg_queue: queue.Queue = queue.Queue()
 
-        # -- Game state --
+        # Game state
         self.player_name: str = ""
         self.current_round: int = 0
         self.total_rounds: int = 5
-        # Round-phase state machine: idle → red → green/penalized → clicked → idle
         self.round_state: str = "idle"
 
-        # -- Main container (screens are packed inside this) --
+        # Every screen in the app is drawn inside this container frame
         self.container = tk.Frame(self.root, bg=BG_DARK)
         self.container.pack(fill=tk.BOTH, expand=True)
 
-        # -- Widget references (set during screen creation) --
+        # Widget references that get reused across different screens
         self.game_frame: Optional[tk.Frame] = None
         self.game_label: Optional[tk.Label] = None
         self.round_info_label: Optional[tk.Label] = None
@@ -113,29 +87,20 @@ class ReactionRushClient:
         self._overlay_after_ids: list[str] = []
         self._current_screen: Optional[tk.Widget] = None
 
-        # -- Draw the first screen --
         self._show_connect_screen()
-
-        # -- Start the queue-polling loop --
         self._poll_queue()
-
-        # -- Handle the window close button --
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
 
     def run(self) -> None:
-        """Enter the Tkinter main loop (blocks until the window closes)."""
+        """Start the Tkinter event loop"""
         self.root.mainloop()
 
-    # -----------------------------------------------------------------------
     # Screen helpers
-    # -----------------------------------------------------------------------
-
     def _clear(self) -> None:
-        """Destroy every widget inside the container frame."""
+        """Clear the current screen and reset widget references"""
         self.container.config(bg=BG_DARK)
         for w in self.container.winfo_children():
             w.destroy()
-        # Reset widget references
         self.game_frame = None
         self.game_label = None
         self.round_info_label = None
@@ -157,7 +122,7 @@ class ReactionRushClient:
         command,
         width: int,
     ) -> tk.Button:
-        """Create a button with clearer borders and text on macOS."""
+        """Create a button using the shared app style"""
         return tk.Button(
             parent,
             text=text,
@@ -185,7 +150,7 @@ class ReactionRushClient:
         padx: int = 24,
         pady: int = 24,
     ) -> tk.Frame:
-        """Create a framed panel used across the UI."""
+        """Create a reusable panel frame with an optional inner frame"""
         panel = tk.Frame(
             parent,
             bg=bg,
@@ -196,16 +161,16 @@ class ReactionRushClient:
         if padx or pady:
             inner = tk.Frame(panel, bg=bg)
             inner.pack(fill=tk.BOTH, expand=True, padx=padx, pady=pady)
-            panel.inner = inner  # type: ignore[attr-defined]
+            panel.inner = inner  # type: ignore[attr-defined]  # easy way to access the padded inner area
         return panel
 
     @staticmethod
     def _panel_inner(panel: tk.Frame) -> tk.Frame:
-        """Return the inner content frame created by _make_panel."""
+        """Get the inner frame if one was created"""
         return getattr(panel, "inner", panel)
 
     def _style_entry(self, entry: tk.Entry) -> None:
-        """Apply a consistent card-like entry style."""
+        """Apply the shared style used for text inputs"""
         entry.config(
             font=("Helvetica", 13),
             width=24,
@@ -225,7 +190,7 @@ class ReactionRushClient:
         fg: str = FG_WHITE,
         duration_ms: int = 1300,
     ) -> None:
-        """Show a large animated message over the current screen."""
+        """Show a short animated message over the current screen"""
         for after_id in self._overlay_after_ids:
             self.root.after_cancel(after_id)
         self._overlay_after_ids.clear()
@@ -318,7 +283,7 @@ class ReactionRushClient:
         self._overlay_after_ids.append(self.root.after(duration_ms, _clear_overlay))
 
     def _get_round_feedback(self, data: dict) -> tuple[str, str]:
-        """Return a short round-result message for the local player."""
+        """Pick the short result message for this player."""
         my_result = None
         results = data.get("results", [])
         for result in results:
@@ -338,12 +303,9 @@ class ReactionRushClient:
             return "Nice!", "#7CFFB2"
         return "Too late!", "#ff7a7a"
 
-    # -----------------------------------------------------------------------
     # Connect screen
-    # -----------------------------------------------------------------------
-
     def _show_connect_screen(self) -> None:
-        """Render the server-connection form."""
+        """Show the connection form."""
         self._clear()
 
         outer = tk.Frame(self.container, bg=BG_DARK)
@@ -376,7 +338,6 @@ class ReactionRushClient:
             font=("Helvetica", 11), fg=FG_MUTED, bg=BG_CARD,
         ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 18))
 
-        # Form fields: label + entry
         labels   = ["Host:", "Port:", "Access Code:", "Player Name:"]
         defaults = ["127.0.0.1", "5000", "RED123", ""]
         self._entries = []
@@ -391,11 +352,9 @@ class ReactionRushClient:
             self._style_entry(entry)
             entry.insert(0, default)
             entry.grid(row=i + 2, column=1, padx=0, pady=7, ipady=6)
-            # Press Enter in any field → connect
             entry.bind("<Return>", lambda _e: self._do_connect())
             self._entries.append(entry)
 
-        # Connect button
         self._make_button(
             frame,
             text="Connect",
@@ -403,7 +362,6 @@ class ReactionRushClient:
             command=self._do_connect,
         ).grid(row=len(labels) + 2, column=0, columnspan=2, pady=(18, 8))
 
-        # Status message (errors, "Connecting…", etc.)
         self.connect_status_label = tk.Label(
             frame, text="", font=("Helvetica", 11),
             fg="#e74c3c", bg=BG_CARD, justify="center",
@@ -444,17 +402,15 @@ class ReactionRushClient:
             justify="left", wraplength=220,
         ).pack(anchor="w", pady=(12, 0))
 
-        # Focus the name field since the others have defaults
         self._entries[3].focus_set()
 
     def _do_connect(self) -> None:
-        """Validate form, open a TCP socket, and send a join request."""
+        """Connect to the server and send the join request."""
         host = self._entries[0].get().strip()
         port_str = self._entries[1].get().strip()
         code = self._entries[2].get().strip()
         name = self._entries[3].get().strip()
 
-        # --- Input validation ---
         if not host or not port_str or not code or not name:
             self.connect_status_label.config(text="All fields are required.")
             return
@@ -464,13 +420,12 @@ class ReactionRushClient:
             self.connect_status_label.config(text="Port must be a number.")
             return
 
-        # --- Tear down any previous connection ---
         self.connected = False
         if self.sock is not None:
             safe_close(self.sock)
             self.sock = None
 
-        # Drain stale messages that belong to an old session
+        # Remove any old queued messages from a previous connection attempt
         while not self.msg_queue.empty():
             try:
                 self.msg_queue.get_nowait()
@@ -480,12 +435,11 @@ class ReactionRushClient:
         self.connect_status_label.config(text="Connecting …", fg="#f1c40f")
         self.root.update_idletasks()
 
-        # --- Open TCP connection ---
         try:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.sock.settimeout(5.0)       # connection timeout
+            self.sock.settimeout(5.0)
             self.sock.connect((host, port))
-            self.sock.settimeout(1.0)       # recv timeout for the reader loop
+            self.sock.settimeout(1.0)
         except (socket.timeout, ConnectionRefusedError, OSError) as exc:
             self.connect_status_label.config(
                 text=f"Connection failed: {exc}", fg="#e74c3c")
@@ -495,26 +449,21 @@ class ReactionRushClient:
         self.connected = True
         self.player_name = name
 
-        # Capture the socket reference so the receiver thread can detect
-        # when this session has been superseded by a new _do_connect call.
+        # Keep this exact socket reference so old receiver threads can tell
+        # when they no longer belong to the current connection
         my_sock = self.sock
         threading.Thread(
             target=self._recv_loop, args=(my_sock,), daemon=True,
         ).start()
 
-        # Ask the server to let us in
         send_message(self.sock, make_message(
             MSG_JOIN_REQUEST, player_name=name, access_code=code))
 
-    # -----------------------------------------------------------------------
-    # Lobby screen
-    # -----------------------------------------------------------------------
-
+    # Lobby helpers
     def _show_lobby_screen(self) -> None:
-        """Render the lobby: player list, ready button, status bar."""
+        """Show the lobby screen with the player list and ready button"""
         self._clear()
 
-        # -- Header --
         top = tk.Frame(self.container, bg=BG_DARK)
         top.pack(fill=tk.X, padx=28, pady=(24, 14))
         self._current_screen = self.container
@@ -533,7 +482,6 @@ class ReactionRushClient:
         mid = tk.Frame(self.container, bg=BG_DARK)
         mid.pack(fill=tk.BOTH, expand=True, padx=28, pady=8)
 
-        # -- Player list panel --
         players_panel = self._make_panel(mid, bg=BG_PANEL, padx=22, pady=22)
         players_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 16))
         mid_left = self._panel_inner(players_panel)
@@ -587,13 +535,13 @@ class ReactionRushClient:
         ).pack(anchor="w", pady=(10, 0))
 
     def _do_ready(self) -> None:
-        """Notify the server that this player is ready to play."""
+        """Tell the server this player is ready"""
         send_message(self.sock, make_message(MSG_READY))
         if self._ready_btn is not None:
             self._ready_btn.config(state="disabled", text="Ready  \u2713")
 
     def _update_lobby_players(self, players: list) -> None:
-        """Refresh the player-list widget with the latest data."""
+        """Refresh the player list shown in the lobby"""
         if self.lobby_players_frame is None:
             return
 
@@ -622,24 +570,14 @@ class ReactionRushClient:
                 fg=colour, bg=BG_CARD_ALT, anchor="e",
             ).pack(side=tk.RIGHT, padx=10)
 
-    # -----------------------------------------------------------------------
-    # Game screen (reaction area)
-    # -----------------------------------------------------------------------
-
+    # Game screen
     def _show_game_screen(self, round_num: int, total: int) -> None:
-        """
-        Prepare the reaction-game canvas for a new round.
-
-        The canvas fills the window with a solid colour (red, green, or
-        orange) and displays a large centred instruction label.
-        Clicking anywhere on the canvas triggers ``_on_click``.
-        """
+        """Show the main reaction screen for the current round"""
         self._clear()
         self.current_round = round_num
         self.total_rounds = total
         self.round_state = "red"
 
-        # Info bar at the top
         info = tk.Frame(self.container, bg=BG_ACCENT, height=58)
         info.pack(fill=tk.X, padx=20, pady=(16, 0))
         info.pack_propagate(False)
@@ -656,7 +594,6 @@ class ReactionRushClient:
         )
         self.game_hint_label.pack(side=tk.RIGHT, padx=18)
 
-        # Game area — a coloured frame with a centred label
         self.game_frame = tk.Frame(self.container, bg=RED_SCREEN)
         self.game_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(12, 20))
         self._current_screen = self.game_frame
@@ -681,8 +618,8 @@ class ReactionRushClient:
             font=("Helvetica", 14), fg="#ffe9e9", bg=RED_SCREEN,
         ).place(relx=0.5, rely=0.7, anchor="center")
 
-        # Bind click on BOTH the frame and the label so clicking
-        # anywhere in the game area is detected
+        # Bind clicks on the main frame and the center panel so the
+        # player can click basically anywhere on the game screen
         self.game_frame.bind("<Button-1>", self._on_click)
         center_panel.bind("<Button-1>", self._on_click)
         self.game_label.bind("<Button-1>", self._on_click)
@@ -690,7 +627,7 @@ class ReactionRushClient:
             child.bind("<Button-1>", self._on_click)
 
     def _set_game_colour(self, bg: str, text: str) -> None:
-        """Change the game area's background colour and centre text."""
+        """Update the game screen colours and the main message text"""
         if self.game_frame is not None:
             self.game_frame.config(bg=bg)
         if self.game_label is not None:
@@ -710,33 +647,22 @@ class ReactionRushClient:
             self.game_hint_label.config(text=hint)
 
     def _on_click(self, _event: object = None) -> None:
-        """
-        Handle a mouse click on the game area.
-
-        * During the **red** phase → false start (penalty).
-        * During the **green** phase → valid reaction click.
-        * Any other state → ignore.
-        """
+        """Handle a click on the reaction screen"""
         if self.round_state == "red":
-            # Player clicked too early — show penalty locally and inform server
             self.round_state = "penalized"
             self._set_game_colour(ORANGE_SCREEN, "Penalty: Too soon!")
             send_message(self.sock, make_message(
                 MSG_CLICK, early=True, round_number=self.current_round))
 
         elif self.round_state == "green":
-            # Valid click!
             self.round_state = "clicked"
             self._set_game_colour(GREEN_SCREEN, "Clicked!  Waiting \u2026")
             send_message(self.sock, make_message(
                 MSG_CLICK, early=False, round_number=self.current_round))
 
-    # -----------------------------------------------------------------------
-    # Round-result screen
-    # -----------------------------------------------------------------------
-
+    # Result screens
     def _show_round_result(self, data: dict) -> None:
-        """Display per-round scores and the current leaderboard."""
+        """Show the round result screen and the current leaderboard"""
         self._clear()
         self.round_state = "idle"
 
@@ -748,7 +674,6 @@ class ReactionRushClient:
         outer.pack(fill=tk.BOTH, expand=True, padx=26, pady=22)
         self._current_screen = outer
 
-        # -- Heading --
         tk.Label(
             outer, text=f"Round {rnd} of {total}",
             font=("Helvetica", 15, "bold"), fg=GOLD, bg=RESULT_BG,
@@ -758,7 +683,6 @@ class ReactionRushClient:
             font=("Helvetica", 30, "bold"), fg=FG_WHITE, bg=RESULT_BG,
         ).pack(anchor="w", pady=(4, 16))
 
-        # -- Results table --
         results_panel = self._make_panel(outer, bg=BG_CARD, padx=18, pady=18)
         results_panel.pack(fill=tk.X)
         table = self._panel_inner(results_panel)
@@ -789,7 +713,6 @@ class ReactionRushClient:
                     fg=FG_WHITE, bg=cell_bg, width=16,
                 ).grid(row=i, column=c, padx=4, pady=1)
 
-        # -- Leaderboard --
         leaderboard_panel = self._make_panel(outer, bg=BG_PANEL, padx=18, pady=18)
         leaderboard_panel.pack(fill=tk.X, pady=(16, 0))
         lb_frame = self._panel_inner(leaderboard_panel)
@@ -819,7 +742,6 @@ class ReactionRushClient:
                     fg=FG_WHITE, bg=cell_bg, width=14,
                 ).grid(row=i, column=c, padx=3, pady=1)
 
-        # -- Next-round hint --
         tk.Label(
             outer, text="Next round starting soon \u2026",
             font=("Helvetica", 12, "italic"), fg=FG_LIGHT, bg=RESULT_BG,
@@ -828,12 +750,8 @@ class ReactionRushClient:
         message, colour = self._get_round_feedback(data)
         self._show_overlay_message(message, colour)
 
-    # -----------------------------------------------------------------------
-    # Game-over screen
-    # -----------------------------------------------------------------------
-
     def _show_game_over(self, data: dict) -> None:
-        """Show the final leaderboard, winner, and a Quit button."""
+        """Show the final results screen"""
         self._clear()
         self.round_state = "idle"
 
@@ -863,7 +781,6 @@ class ReactionRushClient:
             font=("Helvetica", 26, "bold"), fg="#7CFFB2", bg=BG_PANEL,
         ).pack(anchor="w", pady=(6, 0))
 
-        # -- Final leaderboard --
         leaderboard_panel = self._make_panel(outer, bg=BG_CARD, padx=18, pady=18)
         leaderboard_panel.pack(fill=tk.X, pady=(16, 0))
         lb_frame = self._panel_inner(leaderboard_panel)
@@ -889,7 +806,6 @@ class ReactionRushClient:
                     fg=FG_WHITE, bg=cell_bg, width=14,
                 ).grid(row=r, column=c, padx=5, pady=3)
 
-        # -- Quit button --
         self._make_button(
             outer,
             text="Quit",
@@ -902,24 +818,15 @@ class ReactionRushClient:
         else:
             self._show_overlay_message("You Lose!", "#ff7a7a")
 
-    # -----------------------------------------------------------------------
-    # Network: receiver thread + queue polling
-    # -----------------------------------------------------------------------
-
+    # Network message handling
     def _recv_loop(self, my_sock: socket.socket) -> None:
-        """
-        Background thread: read messages from *my_sock* into the queue.
-
-        *my_sock* is the socket that was current when this thread was
-        spawned.  If the user reconnects (creating a new socket), this
-        thread detects the mismatch and exits silently, preventing stale
-        messages from polluting the new session.
-        """
+        """Receive server messages on a background thread"""
         buf = ""
         while self.running and self.sock is my_sock:
             msgs, buf = receive_messages(my_sock, buf)
             if msgs is None:
-                # Connection lost — only notify if we're still the active session
+                # Only post a disconnect if this thread still belongs to
+                # the current active socket
                 if self.sock is my_sock:
                     self.msg_queue.put({"type": "_disconnected"})
                 break
@@ -928,11 +835,7 @@ class ReactionRushClient:
                     self.msg_queue.put(m)
 
     def _poll_queue(self) -> None:
-        """
-        Drain the message queue and dispatch each item (runs on Tk thread).
-
-        Scheduled every 50 ms via ``root.after``.
-        """
+        """Handle queued server messages on the Tkinter thread"""
         try:
             while True:
                 msg = self.msg_queue.get_nowait()
@@ -943,12 +846,8 @@ class ReactionRushClient:
         if self.running:
             self.root.after(50, self._poll_queue)
 
-    # -----------------------------------------------------------------------
-    # Message dispatch
-    # -----------------------------------------------------------------------
-
     def _handle(self, msg: dict) -> None:
-        """Route a server message to the appropriate handler."""
+        """Route each server message to the matching UI handler"""
         t = msg.get("type", "")
 
         if   t == MSG_JOIN_RESPONSE: self._on_join_response(msg)
@@ -964,13 +863,12 @@ class ReactionRushClient:
         elif t == MSG_DISCONNECT:    self._on_server_disconnect(msg)
         elif t == "_disconnected":   self._on_server_disconnect(msg)
 
-    # -- individual handlers ------------------------------------------------
-
+    # Individual message handlers
     def _on_join_response(self, msg: dict) -> None:
+        """Handle the result of the join request"""
         if msg.get("success"):
             self._show_lobby_screen()
         else:
-            # Rejected — close this connection so the user can retry
             self.connected = False
             safe_close(self.sock)
             self.sock = None
@@ -979,6 +877,7 @@ class ReactionRushClient:
                     text=msg.get("message", "Join rejected."), fg="#e74c3c")
 
     def _on_lobby_update(self, msg: dict) -> None:
+        """Update the lobby player list and ready count"""
         players = msg.get("players", [])
         self._update_lobby_players(players)
         if self.lobby_status_label is not None:
@@ -988,6 +887,7 @@ class ReactionRushClient:
                      f"{ready} ready")
 
     def _on_game_start(self, msg: dict) -> None:
+        """Show the short game-start screen"""
         self.total_rounds = msg.get("total_rounds", 5)
         self._clear()
         splash = self._make_panel(self.container, bg=BG_PANEL, padx=28, pady=28)
@@ -1009,32 +909,37 @@ class ReactionRushClient:
         ).pack()
 
     def _on_round_prepare(self, msg: dict) -> None:
+        """Switch into the red-screen state for a new round"""
         rnd   = msg.get("round_number", 1)
         total = msg.get("total_rounds", self.total_rounds)
         self._show_game_screen(rnd, total)
 
     def _on_round_go(self, _msg: dict) -> None:
-        # Only switch to green if the player hasn't already false-started
+        """Switch to the green-screen click state"""
         if self.round_state == "red":
             self.round_state = "green"
             self._set_game_colour(GREEN_SCREEN, "Click!")
 
     def _on_penalty(self, _msg: dict) -> None:
-        # Server confirmation of a false start
+        """Show the penalty state after an early click"""
         if self.round_state != "penalized":
             self.round_state = "penalized"
             self._set_game_colour(ORANGE_SCREEN, "Penalty: Too soon!")
 
     def _on_round_result(self, msg: dict) -> None:
+        """Show the round result screen"""
         self._show_round_result(msg)
 
     def _on_game_over(self, msg: dict) -> None:
+        """Show the final game-over screen"""
         self._show_game_over(msg)
 
     def _on_error(self, msg: dict) -> None:
+        """Show a server-side error message"""
         messagebox.showerror("Server Error", msg.get("message", "Unknown error."))
 
     def _on_player_left(self, msg: dict) -> None:
+        """Update the UI when another player disconnects"""
         name = msg.get("player_name", "?")
         if self.lobby_status_label is not None:
             self.lobby_status_label.config(text=f"{name} disconnected.")
@@ -1044,8 +949,7 @@ class ReactionRushClient:
                      f"Round {self.current_round} of {self.total_rounds}")
 
     def _on_server_disconnect(self, _msg: dict) -> None:
-        # Guard: if we already intentionally closed (e.g. rejected join),
-        # don't show the popup.
+        """Handle a lost connection to the server"""
         if not self.connected:
             return
         self.connected = False
@@ -1053,12 +957,9 @@ class ReactionRushClient:
             "Disconnected", "Lost connection to the server.")
         self._show_connect_screen()
 
-    # -----------------------------------------------------------------------
-    # Clean-up
-    # -----------------------------------------------------------------------
-
+    # Closing / cleanup
     def _on_closing(self) -> None:
-        """Handle the window ✕ button: disconnect and destroy."""
+        """Close the client window and disconnect first"""
         self.running = False
         self.connected = False
         if self.sock is not None:
@@ -1066,11 +967,6 @@ class ReactionRushClient:
                 MSG_DISCONNECT, message="Client quit."))
             safe_close(self.sock)
         self.root.destroy()
-
-
-# ============================================================================
-# Entry point
-# ============================================================================
 
 if __name__ == "__main__":
     ReactionRushClient().run()

@@ -1,10 +1,14 @@
-"""TCP server for the Reaction Rush game.
+"""
+server.py
 
-Run with:
-    python server.py --host 127.0.0.1 --port 5000 --access-code RED123 --min-players 2
+Main TCP server for Reaction Rush.
 
-The server accepts player connections, manages the lobby, runs the rounds,
-and sends results back to every client.
+This file handles:
+- accepting client connections
+- validating lobby joins
+- starting the game when everyone is ready
+- running each round
+- calculating and sending round/final results
 """
 
 import argparse
@@ -29,39 +33,20 @@ from game_logic import (
 from utils import safe_close, timestamp
 
 
-# ============================================================================
-# Player record
-# ============================================================================
-
 class Player:
-    """Server-side representation of a single connected client."""
+    """Stores the server-side state for one player"""
 
     def __init__(self, pid: int, sock: socket.socket, addr: tuple) -> None:
         self.id: int = pid
         self.socket: socket.socket = sock
         self.address: tuple = addr
-        self.name: str = ""           # set after a valid join_request
-        self.joined: bool = False     # True once access code accepted
-        self.ready: bool = False      # True once the player clicks Ready
-        self.connected: bool = True   # False after disconnect
-
-
-# ============================================================================
-# Game server
-# ============================================================================
+        self.name: str = ""           # set after a successful join
+        self.joined: bool = False
+        self.ready: bool = False
+        self.connected: bool = True
 
 class GameServer:
-    """
-    Manages TCP connections, the lobby, and the 5-round reaction game.
-
-    Thread safety
-    -------------
-    ``self.lock`` protects *all* mutable shared state: player dicts,
-    round-phase flags, click data, and result accumulators.  Every
-    public helper acquires the lock for the minimum necessary window,
-    releases it before any blocking I/O (``send_message``,
-    ``time.sleep``, ``Event.wait``).
-    """
+    """Handles connections, lobby state, and the game rounds"""
 
     def __init__(
         self, host: str, port: int, access_code: str, min_players: int,
@@ -71,40 +56,34 @@ class GameServer:
         self.access_code = access_code
         self.min_players = max(2, min_players)
 
-        # Server socket
+        # Main server socket
         self.server_socket: Optional[socket.socket] = None
-        self.running: bool = False       # controls accept + recv loops
-        self.game_started: bool = False  # True once game thread launches
+        self.running: bool = False
+        self.game_started: bool = False
 
-        # -- Player management (protected by self.lock) ---------------------
+        # Shared player state
         self.players: Dict[int, Player] = {}
         self._next_id: int = 0
         self.lock = threading.Lock()
 
-        # -- Per-round state (protected by self.lock) -----------------------
+        # Shared round state
         self.round_number: int = 0
-        self.round_phase: str = "lobby"   # lobby|prepare|go|scoring|done
-        self.round_go_time: float = 0.0   # monotonic timestamp of GO
-        self.round_clicks: Dict[int, float] = {}   # pid → reaction ms
-        self.round_false_starts: Set[int] = set()   # pids that clicked early
-        self.round_responses: Set[int] = set()       # pids that responded
+        self.round_phase: str = "lobby"   # lobby, prepare, go, scoring, done
+        self.round_go_time: float = 0.0
+        self.round_clicks: Dict[int, float] = {}
+        self.round_false_starts: Set[int] = set()
+        self.round_responses: Set[int] = set()
 
-        # Cumulative results: pid → [PlayerRoundResult, …]
+        # Round history for each player
         self.all_round_results: Dict[int, list] = {}
-
-        # Signalled when every active player has responded in a round
         self.all_responded = threading.Event()
 
-    # -----------------------------------------------------------------------
-    # Lifecycle
-    # -----------------------------------------------------------------------
-
+    # Server setup / shutdown
     def start(self) -> None:
-        """Bind, listen, and enter the accept loop (blocks)."""
+        """Start listening for clients and enter the accept loop"""
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        # SO_REUSEADDR lets us restart quickly after a crash
+        # Lets us restart the server without waiting for the port to clear
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        # 1-second timeout so the accept loop can check self.running
         self.server_socket.settimeout(1.0)
         self.server_socket.bind((self.host, self.port))
         self.server_socket.listen(5)
@@ -118,13 +97,12 @@ class GameServer:
         self._accept_loop()
 
     def shutdown(self) -> None:
-        """Gracefully shut down: notify clients, close all sockets."""
+        """Shut down the server and close any open sockets"""
         self._log("Shutting down …")
         self.running = False
         self.round_phase = "done"
-        self.all_responded.set()  # unblock game thread if waiting
+        self.all_responded.set()
 
-        # Best-effort goodbye to every client
         self._broadcast(make_message(MSG_DISCONNECT, message="Server shutting down."))
 
         with self.lock:
@@ -134,21 +112,17 @@ class GameServer:
         safe_close(self.server_socket)
         self._log("Server stopped.")
 
-    # -----------------------------------------------------------------------
     # Connection handling
-    # -----------------------------------------------------------------------
-
     def _accept_loop(self) -> None:
-        """Block in a loop, accepting new TCP connections."""
+        """Accept new client connections while the server is running"""
         while self.running:
             try:
                 client_sock, addr = self.server_socket.accept()
             except socket.timeout:
-                continue       # check self.running, then try again
+                continue
             except OSError:
-                break          # socket closed during shutdown
+                break
 
-            # Register the new player
             with self.lock:
                 pid = self._next_id
                 self._next_id += 1
@@ -156,7 +130,6 @@ class GameServer:
 
             self._log(f"New connection from {addr}")
 
-            # Spawn a dedicated receiver thread for this client
             threading.Thread(
                 target=self._client_handler,
                 args=(pid,),
@@ -164,22 +137,15 @@ class GameServer:
             ).start()
 
     def _client_handler(self, pid: int) -> None:
-        """
-        Receive loop for a single client.
-
-        Runs on its own thread.  Reads newline-delimited JSON messages,
-        dispatching each to ``_handle_msg``.  Exits when the connection
-        drops or the server is shutting down.
-        """
+        """Handle incoming messages for one client until it disconnects"""
         player = self.players[pid]
         buf = ""
-        player.socket.settimeout(1.0)  # allow periodic self.running check
+        player.socket.settimeout(1.0)
 
         while self.running and player.connected:
             msgs, buf = receive_messages(player.socket, buf)
 
             if msgs is None:
-                # Connection lost
                 break
 
             for m in msgs:
@@ -190,12 +156,9 @@ class GameServer:
 
         self._handle_disconnect(pid)
 
-    # -----------------------------------------------------------------------
-    # Message dispatch
-    # -----------------------------------------------------------------------
-
+    # Incoming message routing
     def _handle_msg(self, pid: int, msg: dict) -> None:
-        """Route an incoming message to the correct handler."""
+        """Send each incoming message to the matching handler"""
         t = msg.get("type", "")
         if t == MSG_JOIN_REQUEST:
             self._on_join(pid, msg)
@@ -206,10 +169,9 @@ class GameServer:
         elif t == MSG_DISCONNECT:
             self._handle_disconnect(pid)
 
-    # -- join ---------------------------------------------------------------
-
+    # Join / ready / click handlers
     def _on_join(self, pid: int, msg: dict) -> None:
-        """Validate access code and player name, then admit or reject."""
+        """Validate join data, then add the player to the lobby if valid"""
         code = msg.get("access_code", "")
         name = msg.get("player_name", "").strip()
 
@@ -218,14 +180,12 @@ class GameServer:
             if p is None:
                 return
 
-            # Reject if a game is already running
             if self.game_started:
                 send_message(p.socket, make_message(
                     MSG_JOIN_RESPONSE, success=False,
                     message="Game already in progress."))
                 return
 
-            # Validate the lobby access code
             if code != self.access_code:
                 send_message(p.socket, make_message(
                     MSG_JOIN_RESPONSE, success=False,
@@ -233,14 +193,12 @@ class GameServer:
                 self._log(f"Rejected {p.address}: bad access code")
                 return
 
-            # Validate player name length
             if not name or len(name) > 20:
                 send_message(p.socket, make_message(
                     MSG_JOIN_RESPONSE, success=False,
                     message="Invalid name (must be 1–20 characters)."))
                 return
 
-            # Reject duplicate names (case-insensitive)
             for other in self.players.values():
                 if (other.joined and other.connected
                         and other.id != pid
@@ -250,7 +208,6 @@ class GameServer:
                         message="That name is already taken."))
                     return
 
-            # All checks passed — admit the player
             p.name = name
             p.joined = True
 
@@ -265,7 +222,7 @@ class GameServer:
     # -- ready --------------------------------------------------------------
 
     def _on_ready(self, pid: int) -> None:
-        """Mark a player as ready and check if the game should start."""
+        """Mark one player as ready, then see if the game can start"""
         with self.lock:
             p = self.players.get(pid)
             if p is None or not p.joined:
@@ -279,20 +236,7 @@ class GameServer:
     # -- click --------------------------------------------------------------
 
     def _on_click(self, pid: int, msg: dict) -> None:
-        """
-        Record a player's click event during a round.
-
-        False-start detection is **dual-source**:
-        * If the server is still in the "prepare" phase (red screen), any
-          incoming click is a false start.
-        * If the *client* reports ``early=True`` (player clicked before
-          receiving round_go due to network latency), it is also treated
-          as a false start.
-
-        The reaction time for valid clicks is measured entirely with
-        server-side ``time.monotonic()`` — the difference between the
-        moment GO was sent and the moment the click message arrived.
-        """
+        """Handle one player's click for the current round"""
         arrival = time.monotonic()
         early = msg.get("early", False)
 
@@ -301,12 +245,13 @@ class GameServer:
             if p is None or not p.joined:
                 return
 
-            # Ignore duplicate clicks within the same round
+            # Ignore extra clicks from the same player in the same round
             if pid in self.round_responses:
                 return
 
             if self.round_phase == "prepare" or early:
-                # --- False start ---
+                # Either the click came during red, or the client already
+                # flagged it as an early click because of timing
                 self.round_false_starts.add(pid)
                 self.round_responses.add(pid)
                 send_message(p.socket, make_message(
@@ -316,7 +261,7 @@ class GameServer:
                     f"Player '{p.name}' false-started (round {self.round_number})")
 
             elif self.round_phase == "go":
-                # --- Valid click ---
+                # Valid click after GO, measured on the server side
                 reaction_ms = (arrival - self.round_go_time) * 1000
                 self.round_clicks[pid] = reaction_ms
                 self.round_responses.add(pid)
@@ -325,23 +270,17 @@ class GameServer:
                     f"(round {self.round_number})")
 
             else:
-                # Click outside an active round phase — ignore
+                # Ignore clicks outside an active round
                 return
 
-            # Check whether every active player has now responded
+            # Once everyone responded, the round thread can continue
             if self._all_active_responded():
                 self.all_responded.set()
 
     # -- disconnect ---------------------------------------------------------
 
     def _handle_disconnect(self, pid: int) -> None:
-        """
-        Clean up after a client disconnects (voluntary or crash).
-
-        If a round is in progress the player is automatically marked as
-        having responded so the game thread is not left waiting forever.
-        If fewer than 2 players remain mid-game, the match ends.
-        """
+        """Clean up state after a player disconnects"""
         end_game = False
 
         with self.lock:
@@ -354,19 +293,18 @@ class GameServer:
             name = p.name or f"#{pid}"
             self._log(f"Player '{name}' disconnected")
 
-            # Unblock the game thread if it is waiting for this player
+            # If a player leaves mid-round, count them as done so the
+            # round thread does not wait forever
             if self.round_phase in ("prepare", "go"):
                 self.round_responses.add(pid)
                 if self._all_active_responded():
                     self.all_responded.set()
 
-        # Notify remaining clients
         self._broadcast(make_message(
             MSG_PLAYER_LEFT, player_name=name,
             message=f"{name} has disconnected."))
         self._send_lobby_update()
 
-        # End the game if too few players remain
         with self.lock:
             active = sum(
                 1 for p in self.players.values()
@@ -382,16 +320,12 @@ class GameServer:
                 MSG_ERROR,
                 message="Not enough players remaining. Game ending."))
 
-        # A non-ready player leaving may satisfy the start condition
         if not self.game_started:
             self._check_start()
 
-    # -----------------------------------------------------------------------
     # Lobby helpers
-    # -----------------------------------------------------------------------
-
     def _send_lobby_update(self) -> None:
-        """Broadcast the current player list and ready flags."""
+        """Broadcast the current lobby list and ready states"""
         with self.lock:
             plist = [
                 {"name": p.name, "ready": p.ready}
@@ -401,7 +335,7 @@ class GameServer:
         self._broadcast(make_message(MSG_LOBBY_UPDATE, players=plist))
 
     def _check_start(self) -> None:
-        """Start the game when all connected players are ready (≥ min)."""
+        """Start the game once enough players joined and all are ready"""
         with self.lock:
             if self.game_started:
                 return
@@ -416,21 +350,12 @@ class GameServer:
             self.game_started = True
             self._log(f"All {len(joined)} player(s) ready — starting game!")
 
-        # Launch the game controller on a dedicated thread
         threading.Thread(target=self._run_game, daemon=True).start()
 
-    # -----------------------------------------------------------------------
-    # Game loop
-    # -----------------------------------------------------------------------
-
+    # Game flow
     def _run_game(self) -> None:
-        """
-        Top-level game controller.
-
-        Sends a ``game_start`` announcement, runs 5 rounds, then sends
-        ``game_over`` with the final leaderboard and winner.
-        """
-        # Brief pause so clients can prepare the UI
+        """Run the full game flow from start screen to final result"""
+        # Small delay so clients can switch from lobby UI into game UI
         time.sleep(1.0)
 
         with self.lock:
@@ -445,7 +370,7 @@ class GameServer:
         self._broadcast(make_message(
             MSG_GAME_START, total_rounds=TOTAL_ROUNDS, players=names))
 
-        # Give clients a moment to show the "Game starting" splash
+        # Give clients a moment to show the game-start splash
         time.sleep(1.5)
 
         for rnd in range(1, TOTAL_ROUNDS + 1):
@@ -460,27 +385,16 @@ class GameServer:
                     break
 
             self._run_round(rnd)
-            # Pause between rounds so players can read the scoreboard
+            # Leave a short gap so players can read the round results
             time.sleep(3.0)
 
         self._send_game_over()
 
-    # -----------------------------------------------------------------------
-    # Single-round execution
-    # -----------------------------------------------------------------------
-
     def _run_round(self, rnd: int) -> None:
-        """
-        Execute one complete round:
-        1. Broadcast ``round_prepare`` (clients show the red screen).
-        2. Sleep for a random server-determined delay.
-        3. Broadcast ``round_go`` (clients switch to green).
-        4. Wait for all clicks or a 3-second timeout.
-        5. Score the round and broadcast results + leaderboard.
-        """
+        """Run one full round, then calculate and send the results"""
         delay = generate_round_delay()
 
-        # Reset round state
+        # Reset all per-round state before this round starts
         with self.lock:
             self.round_number = rnd
             self.round_phase = "prepare"
@@ -491,36 +405,33 @@ class GameServer:
 
         self._log(f"--- Round {rnd}/{TOTAL_ROUNDS}  (delay {delay:.2f} s) ---")
 
-        # Phase 1 — RED screen
+        # First tell clients to show the red waiting screen
         self._broadcast(make_message(
             MSG_ROUND_PREPARE, round_number=rnd, total_rounds=TOTAL_ROUNDS))
 
-        # Server-controlled delay; clicks arriving here → false starts.
-        # If everyone already responded during the red phase, skip GO and
-        # score immediately instead of waiting out the whole delay.
+        # If everyone already reacted early, there is no reason to wait
+        # for the full delay before scoring the round
         all_reacted_early = self.all_responded.wait(timeout=delay)
 
         if not all_reacted_early:
             with self.lock:
                 if self.round_phase == "done":
                     return
-                # Phase 2 — GREEN screen
+                # Start the actual reaction window
                 self.round_phase = "go"
                 self.round_go_time = time.monotonic()
 
             self._broadcast(make_message(MSG_ROUND_GO, round_number=rnd))
             self._log(f"GO!  (round {rnd})")
 
-            # Wait for every player to click, or 3 s timeout
+            # Wait until everyone clicks, or stop after the timeout
             self.all_responded.wait(timeout=CLICK_TIMEOUT_MS / 1000)
 
-        # Phase 3 — Scoring
         with self.lock:
             if self.round_phase == "done":
                 return
             self.round_phase = "scoring"
 
-            # Identify active players
             active_ids = {
                 pid for pid, p in self.players.items()
                 if p.joined and p.connected
@@ -538,27 +449,22 @@ class GameServer:
                 elif pid in self.round_clicks:
                     reactions[name] = self.round_clicks[pid]
                 else:
-                    # No response within timeout
                     reactions[name] = None
                     to.add(name)
 
-            # Compute per-round scores
             results = calculate_round_scores(reactions, fs, to)
 
-            # Accumulate into all_round_results for the leaderboard
             for r in results:
                 for pid, p in self.players.items():
                     if p.name == r.player_name and pid in self.all_round_results:
                         self.all_round_results[pid].append(r)
 
-            # Build leaderboard from all rounds so far
             name_map: Dict[str, list] = {}
             for pid, p in self.players.items():
                 if p.joined and pid in self.all_round_results:
                     name_map[p.name] = self.all_round_results[pid]
             lb = calculate_leaderboard(name_map)
 
-            # Serialise for the wire
             res_data = [
                 {
                     "player_name": r.player_name,
@@ -578,12 +484,10 @@ class GameServer:
                 for s in lb
             ]
 
-        # Broadcast round results
         self._broadcast(make_message(
             MSG_ROUND_RESULT, round_number=rnd, total_rounds=TOTAL_ROUNDS,
             results=res_data, leaderboard=lb_data))
 
-        # Server-side log
         self._log(f"Round {rnd} results:")
         for r in res_data:
             if r["false_start"]:
@@ -596,12 +500,8 @@ class GameServer:
                     f"{r['reaction_time_ms']:>6.0f} ms  {r['score']:>3d} pts"
                 )
 
-    # -----------------------------------------------------------------------
-    # Game over
-    # -----------------------------------------------------------------------
-
     def _send_game_over(self) -> None:
-        """Compute and broadcast the final leaderboard and winner."""
+        """Send the final leaderboard and winner to all clients"""
         with self.lock:
             name_map: Dict[str, list] = {}
             for pid, p in self.players.items():
@@ -633,14 +533,11 @@ class GameServer:
                 f"{e['total_score']} pts  ({e['total_reaction_time_ms']:.0f} ms)")
         self._log("=" * 44)
 
-    # -----------------------------------------------------------------------
-    # Broadcast / internal helpers
-    # -----------------------------------------------------------------------
-
+    # Internal helpers
     def _broadcast(
         self, message: dict, exclude: Optional[int] = None,
     ) -> None:
-        """Send *message* to every joined, connected player."""
+        """Send one message to all active players"""
         with self.lock:
             targets = [
                 p for p in self.players.values()
@@ -650,7 +547,7 @@ class GameServer:
             send_message(p.socket, message)
 
     def _all_active_responded(self) -> bool:
-        """True when every active player has an entry in round_responses."""
+        """Check whether every active player responded in this round"""
         active = {
             pid for pid, p in self.players.items()
             if p.joined and p.connected
@@ -659,13 +556,8 @@ class GameServer:
 
     @staticmethod
     def _log(text: str) -> None:
-        """Print a timestamped server log line to stdout."""
+        """Print one server log line with a timestamp"""
         print(f"[{timestamp()}] {text}")
-
-
-# ============================================================================
-# Entry point
-# ============================================================================
 
 def main() -> None:
     """Parse CLI arguments and run the server."""

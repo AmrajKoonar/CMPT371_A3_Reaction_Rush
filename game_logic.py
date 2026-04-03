@@ -1,48 +1,32 @@
 """
-game_logic.py — Core game rules for Reaction Rush.
+game_logic.py
 
-All scoring, leaderboard, and round-generation logic lives here so that
-server.py stays focused on networking and client.py on the GUI.
+Core game rules for Reaction Rush.
 
-Scoring model (per round)
--------------------------
-1. Valid reaction times are sorted fastest → slowest.
-2. 1st place  → 100 pts
-   2nd place  → 75 pts
-   3rd place  → 50 pts
-   4th+ place → 25 pts
-3. False starts and timeouts receive 0 pts.
-
-Final winner
-------------
-Highest cumulative score.  Ties broken by lowest total reaction time.
+This file keeps the pure game logic separate from networking:
+- random round delay
+- round scoring
+- leaderboard building
+- final winner selection
 """
 
 import random
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Set
 
-# ---------------------------------------------------------------------------
-# Tuning constants (importable by server.py)
-# ---------------------------------------------------------------------------
-TOTAL_ROUNDS: int = 5            # number of rounds per game
-MIN_DELAY_SEC: float = 2.0       # shortest red-screen wait (seconds)
-MAX_DELAY_SEC: float = 5.0       # longest  red-screen wait (seconds)
-CLICK_TIMEOUT_MS: int = 3000     # time allowed after GO before timeout (ms)
+TOTAL_ROUNDS: int = 5
+MIN_DELAY_SEC: float = 2.0
+MAX_DELAY_SEC: float = 5.0
+CLICK_TIMEOUT_MS: int = 3000
 
-# Points awarded by placement within a round
+# Points by placement for valid clicks
 PLACEMENT_SCORES: List[int] = [100, 75, 50, 25]
-
-
-# ---------------------------------------------------------------------------
-# Data containers
-# ---------------------------------------------------------------------------
 
 @dataclass
 class PlayerRoundResult:
-    """One player's outcome for a single round."""
+    """Stores one player's result for a single round"""
     player_name: str
-    reaction_time_ms: float     # negative means invalid (false start / timeout)
+    reaction_time_ms: float     # negative value means no valid reaction
     score: int
     false_start: bool
     timed_out: bool
@@ -50,18 +34,13 @@ class PlayerRoundResult:
 
 @dataclass
 class PlayerStanding:
-    """Aggregate standing used to build the leaderboard."""
+    """Stores the overall score and total reaction time"""
     player_name: str
     total_score: int
     total_reaction_time_ms: float
 
-
-# ---------------------------------------------------------------------------
-# Pure functions — no side effects, easy to unit-test
-# ---------------------------------------------------------------------------
-
 def generate_round_delay() -> float:
-    """Return a random red-screen duration in **seconds**."""
+    """Pick a random delay before the screen turns green"""
     return random.uniform(MIN_DELAY_SEC, MAX_DELAY_SEC)
 
 
@@ -70,24 +49,7 @@ def calculate_round_scores(
     false_starts: Set[str],
     timed_out: Set[str],
 ) -> List[PlayerRoundResult]:
-    """
-    Compute scores for a single round.
-
-    Parameters
-    ----------
-    reactions : dict
-        ``{player_name: reaction_ms}``  (``None`` when no valid click).
-    false_starts : set
-        Names of players who clicked before green.
-    timed_out : set
-        Names of players who never clicked in time.
-
-    Returns
-    -------
-    list[PlayerRoundResult]
-        One entry per player, order is fastest-valid first, then
-        false-starts, then timeouts.
-    """
+    """Calculate the round results from clicks, false starts, and timeouts"""
     results: List[PlayerRoundResult] = []
     valid: Dict[str, float] = {}
 
@@ -99,10 +61,10 @@ def calculate_round_scores(
         elif reactions[name] is not None and reactions[name] >= 0:
             valid[name] = reactions[name]
         else:
-            # Safety net — treat unknown state as timeout
+            # If something unexpected slips through, treat it like a miss
             results.append(PlayerRoundResult(name, -1, 0, False, True))
 
-    # Rank valid players from fastest to slowest
+    # Valid clicks are sorted from fastest to slowest, then scored by place
     for rank, (name, rt) in enumerate(sorted(valid.items(), key=lambda x: x[1])):
         score = (
             PLACEMENT_SCORES[rank]
@@ -117,16 +79,11 @@ def calculate_round_scores(
 def calculate_leaderboard(
     all_results: Dict[str, List[PlayerRoundResult]],
 ) -> List[PlayerStanding]:
-    """
-    Build the leaderboard from accumulated round results.
-
-    Sorted by **total score descending**, then **total reaction time
-    ascending** as a tie-breaker (lower cumulative time wins).
-    """
+    """Build the current leaderboard from all saved round results"""
     standings: List[PlayerStanding] = []
     for name, rounds in all_results.items():
         total_score = sum(r.score for r in rounds)
-        # Only sum positive (valid) reaction times for the tie-breaker
+        # Only valid reaction times count for the tie-break
         total_time = sum(r.reaction_time_ms for r in rounds if r.reaction_time_ms > 0)
         standings.append(PlayerStanding(name, total_score, total_time))
 
@@ -135,5 +92,5 @@ def calculate_leaderboard(
 
 
 def determine_winner(standings: List[PlayerStanding]) -> Optional[str]:
-    """Return the name of the first-place player, or ``None``."""
+    """Return the winner's name if there is one"""
     return standings[0].player_name if standings else None
