@@ -461,7 +461,7 @@ class GameServer:
 
             self._run_round(rnd)
             # Pause between rounds so players can read the scoreboard
-            time.sleep(2.5)
+            time.sleep(3.0)
 
         self._send_game_over()
 
@@ -495,21 +495,24 @@ class GameServer:
         self._broadcast(make_message(
             MSG_ROUND_PREPARE, round_number=rnd, total_rounds=TOTAL_ROUNDS))
 
-        # Server-controlled delay; clicks arriving here → false starts
-        time.sleep(delay)
+        # Server-controlled delay; clicks arriving here → false starts.
+        # If everyone already responded during the red phase, skip GO and
+        # score immediately instead of waiting out the whole delay.
+        all_reacted_early = self.all_responded.wait(timeout=delay)
 
-        with self.lock:
-            if self.round_phase == "done":
-                return
-            # Phase 2 — GREEN screen
-            self.round_phase = "go"
-            self.round_go_time = time.monotonic()
+        if not all_reacted_early:
+            with self.lock:
+                if self.round_phase == "done":
+                    return
+                # Phase 2 — GREEN screen
+                self.round_phase = "go"
+                self.round_go_time = time.monotonic()
 
-        self._broadcast(make_message(MSG_ROUND_GO, round_number=rnd))
-        self._log(f"GO!  (round {rnd})")
+            self._broadcast(make_message(MSG_ROUND_GO, round_number=rnd))
+            self._log(f"GO!  (round {rnd})")
 
-        # Wait for every player to click, or 3 s timeout
-        self.all_responded.wait(timeout=CLICK_TIMEOUT_MS / 1000)
+            # Wait for every player to click, or 3 s timeout
+            self.all_responded.wait(timeout=CLICK_TIMEOUT_MS / 1000)
 
         # Phase 3 — Scoring
         with self.lock:
