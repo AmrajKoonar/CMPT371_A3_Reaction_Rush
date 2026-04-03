@@ -72,7 +72,7 @@ exchange, gameplay, and process termination can be viewed below:
 
 To run this project, you need:
 
-* **Python 3.8** or higher  
+* **Python 3.9** or higher  
 * No external pip installations are required for the main project  
 * **Tkinter** must be available for the client GUI  
 * On macOS, use `python3` if `python` does not point to Python 3
