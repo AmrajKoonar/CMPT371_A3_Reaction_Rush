@@ -160,7 +160,7 @@ JSON messages over TCP.
 ## **8. Troubleshooting**
 
 - If you get `Connection refused`, make sure the server is running first.
-- If the game does not start, make sure at least 2 players are connected and both clicked `Ready`.
+- If the game does not start, make sure all connected players are `Ready` (at least 2 players).
 - If Tkinter is missing on Linux, install it with `sudo apt install python3-tk`.
 - If the port is already in use, change the port number and use the same port in both clients.
 
