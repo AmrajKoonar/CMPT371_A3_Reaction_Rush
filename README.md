@@ -172,7 +172,7 @@ JSON messages over TCP.
 
 * **GenAI Usage:**
   * ChatGPT was used to help reorganize and polish parts of the `README.md`.
-  * Codex was used to assist with some UI/interface improvements in the client.
+  * Codex was used to assist with some UI/interface improvements, including result/status wording, feedback messages, and simple animation/presentation in the client interface.
 
 * **References:**
   * [Human Benchmark: Reaction Time Test](https://humanbenchmark.com/tests/reactiontime)
