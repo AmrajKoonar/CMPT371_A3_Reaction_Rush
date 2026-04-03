@@ -48,14 +48,19 @@ from utils import safe_close, format_ms
 BG_DARK    = "#1a1a2e"    # window / connect-screen background
 BG_PANEL   = "#16213e"    # lobby card background
 BG_ACCENT  = "#0f3460"    # info-bar strip
+BG_CARD    = "#111827"
+BG_CARD_ALT = "#1f2937"
+BG_STROKE  = "#31415f"
 FG_LIGHT   = "#e0e0e0"    # secondary text
 FG_WHITE   = "#ffffff"    # primary text
+FG_MUTED   = "#aab5c9"
 BTN_BLUE   = "#3498db"    # default button
 BTN_GREEN  = "#2ecc71"    # ready button
 RED_SCREEN = "#e74c3c"    # reaction "wait" phase
 GREEN_SCREEN = "#27ae60"  # reaction "click!" phase
 ORANGE_SCREEN = "#e67e22" # false-start penalty
 RESULT_BG  = "#2c3e50"    # round-result / leaderboard panel
+GOLD       = "#f1c40f"
 
 
 # ============================================================================
@@ -98,11 +103,15 @@ class ReactionRushClient:
         self.game_frame: Optional[tk.Frame] = None
         self.game_label: Optional[tk.Label] = None
         self.round_info_label: Optional[tk.Label] = None
+        self.game_hint_label: Optional[tk.Label] = None
         self.lobby_players_frame: Optional[tk.Frame] = None
         self.lobby_status_label: Optional[tk.Label] = None
         self.connect_status_label: Optional[tk.Label] = None
         self._ready_btn: Optional[tk.Button] = None
         self._entries: list = []
+        self._overlay_widget: Optional[tk.Frame] = None
+        self._overlay_after_ids: list[str] = []
+        self._current_screen: Optional[tk.Widget] = None
 
         # -- Draw the first screen --
         self._show_connect_screen()
@@ -123,16 +132,23 @@ class ReactionRushClient:
 
     def _clear(self) -> None:
         """Destroy every widget inside the container frame."""
+        self.container.config(bg=BG_DARK)
         for w in self.container.winfo_children():
             w.destroy()
         # Reset widget references
         self.game_frame = None
         self.game_label = None
         self.round_info_label = None
+        self.game_hint_label = None
         self.lobby_players_frame = None
         self.lobby_status_label = None
         self.connect_status_label = None
         self._ready_btn = None
+        self._current_screen = None
+        for after_id in self._overlay_after_ids:
+            self.root.after_cancel(after_id)
+        self._overlay_after_ids.clear()
+        self._overlay_widget = None
 
     def _make_button(
         self,
@@ -162,6 +178,166 @@ class ReactionRushClient:
             pady=4,
         )
 
+    def _make_panel(
+        self,
+        parent: tk.Widget,
+        bg: str = BG_CARD,
+        padx: int = 24,
+        pady: int = 24,
+    ) -> tk.Frame:
+        """Create a framed panel used across the UI."""
+        panel = tk.Frame(
+            parent,
+            bg=bg,
+            bd=0,
+            highlightthickness=1,
+            highlightbackground=BG_STROKE,
+        )
+        if padx or pady:
+            inner = tk.Frame(panel, bg=bg)
+            inner.pack(fill=tk.BOTH, expand=True, padx=padx, pady=pady)
+            panel.inner = inner  # type: ignore[attr-defined]
+        return panel
+
+    @staticmethod
+    def _panel_inner(panel: tk.Frame) -> tk.Frame:
+        """Return the inner content frame created by _make_panel."""
+        return getattr(panel, "inner", panel)
+
+    def _style_entry(self, entry: tk.Entry) -> None:
+        """Apply a consistent card-like entry style."""
+        entry.config(
+            font=("Helvetica", 13),
+            width=24,
+            bg="#f8fafc",
+            fg="#0f172a",
+            insertbackground="#0f172a",
+            relief="flat",
+            highlightthickness=2,
+            highlightbackground=BG_STROKE,
+            highlightcolor=BTN_BLUE,
+            bd=0,
+        )
+
+    def _show_overlay_message(
+        self,
+        text: str,
+        fg: str = FG_WHITE,
+        duration_ms: int = 1300,
+    ) -> None:
+        """Show a large animated message over the current screen."""
+        for after_id in self._overlay_after_ids:
+            self.root.after_cancel(after_id)
+        self._overlay_after_ids.clear()
+        if self._overlay_widget is not None:
+            self._overlay_widget.destroy()
+            self._overlay_widget = None
+
+        host = self._current_screen if self._current_screen is not None else self.container
+        base_bg = str(host.cget("bg"))
+        overlay = tk.Frame(
+            host,
+            bg=base_bg,
+            bd=0,
+            highlightthickness=0,
+        )
+        overlay.place(x=0, y=0, relwidth=1, relheight=1)
+
+        sparkle = tk.Label(
+            overlay,
+            text="✦ ✦ ✦",
+            font=("Helvetica", 24, "bold"),
+            fg=fg,
+            bg=base_bg,
+        )
+        sparkle.place(relx=0.5, rely=0.27, anchor="center")
+
+        shadow = tk.Label(
+            overlay,
+            text=text,
+            font=("Helvetica", 88, "bold"),
+            fg="#05070c",
+            bg=base_bg,
+        )
+        shadow.place(relx=0.5, rely=0.51, anchor="center")
+
+        main = tk.Label(
+            overlay,
+            text=text,
+            font=("Helvetica", 88, "bold"),
+            fg=fg,
+            bg=base_bg,
+        )
+        main.place(relx=0.5, rely=0.49, anchor="center")
+
+        subtitle = tk.Label(
+            overlay,
+            text="REACTION RUSH",
+            font=("Helvetica", 18, "bold"),
+            fg=FG_WHITE,
+            bg=base_bg,
+        )
+        subtitle.place(relx=0.5, rely=0.66, anchor="center")
+
+        self._overlay_widget = overlay
+        overlay.lift()
+        if host is not self.container and isinstance(host, tk.Widget):
+            for child in host.winfo_children():
+                if child is not overlay:
+                    overlay.lift(child)
+
+        sizes = [62, 88, 124, 112]
+        y_positions = [0.54, 0.5, 0.47, 0.49]
+
+        def _set_style(size: int, y_pos: float, sparkle_text: str) -> None:
+            if self._overlay_widget is overlay:
+                shadow.config(font=("Helvetica", size, "bold"))
+                main.config(font=("Helvetica", size, "bold"))
+                shadow.place_configure(relx=0.5, rely=y_pos + 0.02, anchor="center")
+                main.place_configure(relx=0.5, rely=y_pos, anchor="center")
+                sparkle.config(text=sparkle_text)
+
+        sparkles = ["✦", "✦ ✦", "✦ ✦ ✦", "✦ ✦"]
+
+        for index, (size, y_pos, sparkle_text) in enumerate(zip(sizes, y_positions, sparkles)):
+            if index == 0:
+                _set_style(size, y_pos, sparkle_text)
+            else:
+                after_id = self.root.after(
+                    index * 80,
+                    lambda s=size, y=y_pos, st=sparkle_text: _set_style(s, y, st),
+                )
+                self._overlay_after_ids.append(after_id)
+
+        def _clear_overlay() -> None:
+            if self._overlay_widget is overlay:
+                overlay.destroy()
+                self._overlay_widget = None
+            self._overlay_after_ids.clear()
+
+        self._overlay_after_ids.append(self.root.after(duration_ms, _clear_overlay))
+
+    def _get_round_feedback(self, data: dict) -> tuple[str, str]:
+        """Return a short round-result message for the local player."""
+        my_result = None
+        results = data.get("results", [])
+        for result in results:
+            if result.get("player_name") == self.player_name:
+                my_result = result
+                break
+
+        if not my_result:
+            return "Round Over!", FG_WHITE
+        if my_result.get("false_start"):
+            return "Too soon!", "#ffb347"
+        if my_result.get("timed_out"):
+            return "Too late!", "#ff7a7a"
+
+        top_score = max((r.get("score", 0) for r in results), default=0)
+        if my_result.get("score", 0) == top_score and top_score > 0:
+            return "Nice!", "#7CFFB2"
+        return "Too late!", "#ff7a7a"
+
     # -----------------------------------------------------------------------
     # Connect screen
     # -----------------------------------------------------------------------
@@ -170,19 +346,35 @@ class ReactionRushClient:
         """Render the server-connection form."""
         self._clear()
 
-        frame = tk.Frame(self.container, bg=BG_DARK)
-        frame.place(relx=0.5, rely=0.5, anchor="center")
-
-        # Title
-        tk.Label(
-            frame, text="Reaction Rush",
-            font=("Helvetica", 28, "bold"), fg=FG_WHITE, bg=BG_DARK,
-        ).grid(row=0, column=0, columnspan=2, pady=(0, 5))
+        outer = tk.Frame(self.container, bg=BG_DARK)
+        outer.place(relx=0.5, rely=0.5, anchor="center")
+        self._current_screen = outer
 
         tk.Label(
-            frame, text="A TCP Multiplayer Reaction Game",
-            font=("Helvetica", 11), fg=FG_LIGHT, bg=BG_DARK,
-        ).grid(row=1, column=0, columnspan=2, pady=(0, 20))
+            outer, text="Reaction Rush",
+            font=("Helvetica", 34, "bold"), fg=FG_WHITE, bg=BG_DARK,
+        ).pack(anchor="w")
+        tk.Label(
+            outer, text="Fast TCP multiplayer reaction game",
+            font=("Helvetica", 13), fg=FG_MUTED, bg=BG_DARK,
+        ).pack(anchor="w", pady=(6, 18))
+
+        shell = tk.Frame(outer, bg=BG_DARK)
+        shell.pack()
+
+        form_panel = self._make_panel(shell, bg=BG_CARD, padx=26, pady=24)
+        form_panel.pack(side=tk.LEFT, padx=(0, 18))
+        frame = self._panel_inner(form_panel)
+
+        tk.Label(
+            frame, text="Join The Lobby",
+            font=("Helvetica", 18, "bold"), fg=FG_WHITE, bg=BG_CARD,
+        ).grid(row=0, column=0, columnspan=2, sticky="w")
+        tk.Label(
+            frame,
+            text="Enter the server details and your player name.",
+            font=("Helvetica", 11), fg=FG_MUTED, bg=BG_CARD,
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 18))
 
         # Form fields: label + entry
         labels   = ["Host:", "Port:", "Access Code:", "Player Name:"]
@@ -192,12 +384,13 @@ class ReactionRushClient:
         for i, (lbl, default) in enumerate(zip(labels, defaults)):
             tk.Label(
                 frame, text=lbl, font=("Helvetica", 12),
-                fg=FG_LIGHT, bg=BG_DARK,
-            ).grid(row=i + 2, column=0, sticky="e", padx=5, pady=4)
+                fg=FG_LIGHT, bg=BG_CARD,
+            ).grid(row=i + 2, column=0, sticky="e", padx=(0, 12), pady=7)
 
-            entry = tk.Entry(frame, font=("Helvetica", 12), width=22)
+            entry = tk.Entry(frame)
+            self._style_entry(entry)
             entry.insert(0, default)
-            entry.grid(row=i + 2, column=1, padx=5, pady=4)
+            entry.grid(row=i + 2, column=1, padx=0, pady=7, ipady=6)
             # Press Enter in any field → connect
             entry.bind("<Return>", lambda _e: self._do_connect())
             self._entries.append(entry)
@@ -208,16 +401,48 @@ class ReactionRushClient:
             text="Connect",
             width=18,
             command=self._do_connect,
-        ).grid(row=len(labels) + 2, column=0, columnspan=2, pady=(15, 5))
+        ).grid(row=len(labels) + 2, column=0, columnspan=2, pady=(18, 8))
 
         # Status message (errors, "Connecting…", etc.)
         self.connect_status_label = tk.Label(
             frame, text="", font=("Helvetica", 11),
-            fg="#e74c3c", bg=BG_DARK,
+            fg="#e74c3c", bg=BG_CARD, justify="center",
         )
         self.connect_status_label.grid(
             row=len(labels) + 3, column=0, columnspan=2,
         )
+
+        side_panel = self._make_panel(shell, bg=BG_PANEL, padx=24, pady=24)
+        side_panel.config(width=280, height=312)
+        side_panel.pack(side=tk.LEFT)
+        side = self._panel_inner(side_panel)
+
+        tk.Label(
+            side, text="How It Works",
+            font=("Helvetica", 16, "bold"), fg=FG_WHITE, bg=BG_PANEL,
+        ).pack(anchor="w")
+        tk.Label(
+            side,
+            text=(
+                "1. Connect to the server\n"
+                "2. Wait in the lobby\n"
+                "3. Everyone clicks Ready\n"
+                "4. React as soon as the screen turns green"
+            ),
+            font=("Helvetica", 12), fg=FG_LIGHT, bg=BG_PANEL,
+            justify="left", anchor="w", padx=0, pady=0,
+        ).pack(anchor="w", pady=(12, 18))
+        tk.Label(
+            side,
+            text="Default access code: RED123",
+            font=("Helvetica", 12, "bold"), fg=GOLD, bg=BG_PANEL,
+        ).pack(anchor="w")
+        tk.Label(
+            side,
+            text="Best shown with one server and two client windows side by side.",
+            font=("Helvetica", 11), fg=FG_MUTED, bg=BG_PANEL,
+            justify="left", wraplength=220,
+        ).pack(anchor="w", pady=(12, 0))
 
         # Focus the name field since the others have defaults
         self._entries[3].focus_set()
@@ -291,44 +516,75 @@ class ReactionRushClient:
 
         # -- Header --
         top = tk.Frame(self.container, bg=BG_DARK)
-        top.pack(fill=tk.X, padx=20, pady=(20, 10))
+        top.pack(fill=tk.X, padx=28, pady=(24, 14))
+        self._current_screen = self.container
 
         tk.Label(
-            top, text="Lobby", font=("Helvetica", 22, "bold"),
+            top, text="Lobby", font=("Helvetica", 28, "bold"),
             fg=FG_WHITE, bg=BG_DARK,
-        ).pack()
+        ).pack(anchor="w")
 
         self.lobby_status_label = tk.Label(
             top, text="Waiting for players …",
-            font=("Helvetica", 12), fg=FG_LIGHT, bg=BG_DARK,
+            font=("Helvetica", 12), fg=FG_MUTED, bg=BG_DARK,
         )
-        self.lobby_status_label.pack(pady=5)
+        self.lobby_status_label.pack(anchor="w", pady=(6, 0))
+
+        mid = tk.Frame(self.container, bg=BG_DARK)
+        mid.pack(fill=tk.BOTH, expand=True, padx=28, pady=8)
 
         # -- Player list panel --
-        mid = tk.Frame(self.container, bg=BG_PANEL, bd=2, relief="groove")
-        mid.pack(fill=tk.BOTH, expand=True, padx=40, pady=10)
+        players_panel = self._make_panel(mid, bg=BG_PANEL, padx=22, pady=22)
+        players_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 16))
+        mid_left = self._panel_inner(players_panel)
 
         tk.Label(
-            mid, text="Players", font=("Helvetica", 14, "bold"),
+            mid_left, text="Players In Lobby", font=("Helvetica", 16, "bold"),
             fg=FG_WHITE, bg=BG_PANEL,
-        ).pack(pady=(10, 5))
+        ).pack(anchor="w")
+        tk.Label(
+            mid_left, text="Everyone must be ready before the game starts.",
+            font=("Helvetica", 11), fg=FG_MUTED, bg=BG_PANEL,
+        ).pack(anchor="w", pady=(4, 12))
 
-        self.lobby_players_frame = tk.Frame(mid, bg=BG_PANEL)
+        self.lobby_players_frame = tk.Frame(mid_left, bg=BG_PANEL)
         self.lobby_players_frame.pack(
-            fill=tk.BOTH, expand=True, padx=20, pady=5,
+            fill=tk.BOTH, expand=True,
         )
 
-        # -- Ready button --
-        bottom = tk.Frame(self.container, bg=BG_DARK)
-        bottom.pack(fill=tk.X, padx=20, pady=(5, 20))
+        side_panel = self._make_panel(mid, bg=BG_CARD, padx=22, pady=22)
+        side_panel.config(width=250)
+        side_panel.pack(side=tk.LEFT, fill=tk.Y)
+        side = self._panel_inner(side_panel)
+
+        tk.Label(
+            side, text="Quick Rules", font=("Helvetica", 16, "bold"),
+            fg=FG_WHITE, bg=BG_CARD,
+        ).pack(anchor="w")
+        tk.Label(
+            side,
+            text=(
+                "Wait for green.\n"
+                "Click too early and you get 0 points.\n"
+                "Fastest player gets the most points."
+            ),
+            font=("Helvetica", 11), fg=FG_LIGHT, bg=BG_CARD,
+            justify="left", wraplength=180,
+        ).pack(anchor="w", pady=(10, 18))
 
         self._ready_btn = self._make_button(
-            bottom,
+            side,
             text="Ready",
             width=14,
             command=self._do_ready,
         )
-        self._ready_btn.pack()
+        self._ready_btn.pack(anchor="w")
+        tk.Label(
+            side,
+            text="Once you are ready, your button locks in.",
+            font=("Helvetica", 10), fg=FG_MUTED, bg=BG_CARD,
+            justify="left", wraplength=180,
+        ).pack(anchor="w", pady=(10, 0))
 
     def _do_ready(self) -> None:
         """Notify the server that this player is ready to play."""
@@ -348,17 +604,22 @@ class ReactionRushClient:
             status = "Ready" if p["ready"] else "Waiting …"
             colour = "#2ecc71" if p["ready"] else "#f39c12"
 
-            row = tk.Frame(self.lobby_players_frame, bg=BG_PANEL)
-            row.pack(fill=tk.X, pady=2)
+            row = tk.Frame(
+                self.lobby_players_frame,
+                bg=BG_CARD_ALT,
+                highlightthickness=1,
+                highlightbackground=BG_STROKE,
+            )
+            row.pack(fill=tk.X, pady=6, ipady=8)
 
             tk.Label(
                 row, text=p["name"], font=("Helvetica", 13),
-                fg=FG_WHITE, bg=BG_PANEL, anchor="w",
+                fg=FG_WHITE, bg=BG_CARD_ALT, anchor="w",
             ).pack(side=tk.LEFT, padx=10)
 
             tk.Label(
                 row, text=status, font=("Helvetica", 12, "bold"),
-                fg=colour, bg=BG_PANEL, anchor="e",
+                fg=colour, bg=BG_CARD_ALT, anchor="e",
             ).pack(side=tk.RIGHT, padx=10)
 
     # -----------------------------------------------------------------------
@@ -379,30 +640,54 @@ class ReactionRushClient:
         self.round_state = "red"
 
         # Info bar at the top
-        info = tk.Frame(self.container, bg=BG_ACCENT, height=40)
-        info.pack(fill=tk.X)
+        info = tk.Frame(self.container, bg=BG_ACCENT, height=58)
+        info.pack(fill=tk.X, padx=20, pady=(16, 0))
         info.pack_propagate(False)
 
         self.round_info_label = tk.Label(
             info, text=f"Round {round_num} of {total}",
-            font=("Helvetica", 14, "bold"), fg=FG_WHITE, bg=BG_ACCENT,
+            font=("Helvetica", 16, "bold"), fg=FG_WHITE, bg=BG_ACCENT,
         )
-        self.round_info_label.pack(expand=True)
+        self.round_info_label.pack(side=tk.LEFT, padx=18)
+
+        self.game_hint_label = tk.Label(
+            info, text="Wait for green",
+            font=("Helvetica", 12), fg=FG_LIGHT, bg=BG_ACCENT,
+        )
+        self.game_hint_label.pack(side=tk.RIGHT, padx=18)
 
         # Game area — a coloured frame with a centred label
         self.game_frame = tk.Frame(self.container, bg=RED_SCREEN)
-        self.game_frame.pack(fill=tk.BOTH, expand=True)
+        self.game_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=(12, 20))
+        self._current_screen = self.game_frame
+
+        center_panel = tk.Frame(
+            self.game_frame,
+            bg=RED_SCREEN,
+            bd=0,
+            highlightthickness=3,
+            highlightbackground=FG_WHITE,
+        )
+        center_panel.place(relx=0.5, rely=0.5, anchor="center", width=520, height=250)
 
         self.game_label = tk.Label(
-            self.game_frame, text="Wait for green \u2026",
-            font=("Helvetica", 52, "bold"), fg=FG_WHITE, bg=RED_SCREEN,
+            center_panel, text="Wait for green \u2026",
+            font=("Helvetica", 48, "bold"), fg=FG_WHITE, bg=RED_SCREEN,
         )
-        self.game_label.place(relx=0.5, rely=0.5, anchor="center")
+        self.game_label.place(relx=0.5, rely=0.42, anchor="center")
+        tk.Label(
+            center_panel,
+            text="Click anywhere once the screen changes.",
+            font=("Helvetica", 14), fg="#ffe9e9", bg=RED_SCREEN,
+        ).place(relx=0.5, rely=0.7, anchor="center")
 
         # Bind click on BOTH the frame and the label so clicking
         # anywhere in the game area is detected
         self.game_frame.bind("<Button-1>", self._on_click)
+        center_panel.bind("<Button-1>", self._on_click)
         self.game_label.bind("<Button-1>", self._on_click)
+        for child in center_panel.winfo_children():
+            child.bind("<Button-1>", self._on_click)
 
     def _set_game_colour(self, bg: str, text: str) -> None:
         """Change the game area's background colour and centre text."""
@@ -410,6 +695,19 @@ class ReactionRushClient:
             self.game_frame.config(bg=bg)
         if self.game_label is not None:
             self.game_label.config(bg=bg, text=text)
+            parent = self.game_label.master
+            if isinstance(parent, tk.Frame):
+                parent.config(bg=bg)
+                for child in parent.winfo_children():
+                    if isinstance(child, tk.Label):
+                        child.config(bg=bg)
+        if self.game_hint_label is not None:
+            hint = "Wait for green"
+            if bg == GREEN_SCREEN:
+                hint = "Click now"
+            elif bg == ORANGE_SCREEN:
+                hint = "Penalty applied"
+            self.game_hint_label.config(text=hint)
 
     def _on_click(self, _event: object = None) -> None:
         """
@@ -445,30 +743,38 @@ class ReactionRushClient:
         rnd   = data.get("round_number", "?")
         total = data.get("total_rounds", self.total_rounds)
 
-        # Outer coloured canvas
-        bg_canvas = tk.Canvas(self.container, bg=RESULT_BG, highlightthickness=0)
-        bg_canvas.pack(fill=tk.BOTH, expand=True)
-
-        inner = tk.Frame(bg_canvas, bg=RESULT_BG)
-        inner.place(relx=0.5, rely=0.5, anchor="center")
+        self.container.config(bg=RESULT_BG)
+        outer = tk.Frame(self.container, bg=RESULT_BG)
+        outer.pack(fill=tk.BOTH, expand=True, padx=26, pady=22)
+        self._current_screen = outer
 
         # -- Heading --
         tk.Label(
-            inner, text=f"Round {rnd} of {total}  \u2014  Results",
-            font=("Helvetica", 20, "bold"), fg=FG_WHITE, bg=RESULT_BG,
-        ).pack(pady=(0, 15))
+            outer, text=f"Round {rnd} of {total}",
+            font=("Helvetica", 15, "bold"), fg=GOLD, bg=RESULT_BG,
+        ).pack(anchor="w")
+        tk.Label(
+            outer, text="Results",
+            font=("Helvetica", 30, "bold"), fg=FG_WHITE, bg=RESULT_BG,
+        ).pack(anchor="w", pady=(4, 16))
 
         # -- Results table --
-        table = tk.Frame(inner, bg=RESULT_BG)
-        table.pack()
+        results_panel = self._make_panel(outer, bg=BG_CARD, padx=18, pady=18)
+        results_panel.pack(fill=tk.X)
+        table = self._panel_inner(results_panel)
+
+        tk.Label(
+            table, text="Round Standings",
+            font=("Helvetica", 16, "bold"), fg=FG_WHITE, bg=BG_CARD,
+        ).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
 
         for c, header in enumerate(["Player", "Reaction", "Score"]):
             tk.Label(
                 table, text=header, font=("Helvetica", 12, "bold"),
-                fg="#f1c40f", bg=RESULT_BG, width=16,
-            ).grid(row=0, column=c, padx=4, pady=2)
+                fg=GOLD, bg=BG_CARD, width=16,
+            ).grid(row=1, column=c, padx=4, pady=2)
 
-        for i, r in enumerate(data.get("results", []), start=1):
+        for i, r in enumerate(data.get("results", []), start=2):
             if r["false_start"]:
                 rt_text = "FALSE START"
             elif r["timed_out"]:
@@ -477,44 +783,50 @@ class ReactionRushClient:
                 rt_text = format_ms(r["reaction_time_ms"])
 
             for c, val in enumerate([r["player_name"], rt_text, str(r["score"])]):
+                cell_bg = BG_CARD_ALT if i % 2 == 0 else BG_CARD
                 tk.Label(
                     table, text=val, font=("Helvetica", 12),
-                    fg=FG_WHITE, bg=RESULT_BG, width=16,
+                    fg=FG_WHITE, bg=cell_bg, width=16,
                 ).grid(row=i, column=c, padx=4, pady=1)
 
         # -- Leaderboard --
-        tk.Label(
-            inner, text="Leaderboard",
-            font=("Helvetica", 16, "bold"), fg="#f1c40f", bg=RESULT_BG,
-        ).pack(pady=(20, 5))
+        leaderboard_panel = self._make_panel(outer, bg=BG_PANEL, padx=18, pady=18)
+        leaderboard_panel.pack(fill=tk.X, pady=(16, 0))
+        lb_frame = self._panel_inner(leaderboard_panel)
 
-        lb_frame = tk.Frame(inner, bg=RESULT_BG)
-        lb_frame.pack()
+        tk.Label(
+            lb_frame, text="Leaderboard",
+            font=("Helvetica", 16, "bold"), fg=FG_WHITE, bg=BG_PANEL,
+        ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 10))
 
         for c, header in enumerate(["#", "Player", "Total Score", "Total Time"]):
             tk.Label(
                 lb_frame, text=header, font=("Helvetica", 11, "bold"),
-                fg="#f1c40f", bg=RESULT_BG, width=14,
-            ).grid(row=0, column=c, padx=3, pady=2)
+                fg=GOLD, bg=BG_PANEL, width=14,
+            ).grid(row=1, column=c, padx=3, pady=2)
 
-        for i, s in enumerate(data.get("leaderboard", []), start=1):
+        for i, s in enumerate(data.get("leaderboard", []), start=2):
             vals = [
-                str(i),
+                str(i - 1),
                 s["player_name"],
                 str(s["total_score"]),
                 format_ms(s["total_reaction_time_ms"]),
             ]
             for c, v in enumerate(vals):
+                cell_bg = BG_PANEL if i % 2 == 0 else BG_ACCENT
                 tk.Label(
                     lb_frame, text=v, font=("Helvetica", 11),
-                    fg=FG_WHITE, bg=RESULT_BG, width=14,
+                    fg=FG_WHITE, bg=cell_bg, width=14,
                 ).grid(row=i, column=c, padx=3, pady=1)
 
         # -- Next-round hint --
         tk.Label(
-            inner, text="Next round starting soon \u2026",
+            outer, text="Next round starting soon \u2026",
             font=("Helvetica", 12, "italic"), fg=FG_LIGHT, bg=RESULT_BG,
-        ).pack(pady=(15, 0))
+        ).pack(anchor="w", pady=(16, 0))
+
+        message, colour = self._get_round_feedback(data)
+        self._show_overlay_message(message, colour)
 
     # -----------------------------------------------------------------------
     # Game-over screen
@@ -525,28 +837,41 @@ class ReactionRushClient:
         self._clear()
         self.round_state = "idle"
 
-        frame = tk.Frame(self.container, bg=BG_DARK)
-        frame.place(relx=0.5, rely=0.5, anchor="center")
+        outer = tk.Frame(self.container, bg=BG_DARK)
+        outer.pack(fill=tk.BOTH, expand=True, padx=30, pady=28)
+        self._current_screen = outer
 
         tk.Label(
-            frame, text="Game Over!",
-            font=("Helvetica", 30, "bold"), fg="#f1c40f", bg=BG_DARK,
-        ).pack(pady=(0, 10))
+            outer, text="Game Over",
+            font=("Helvetica", 16, "bold"), fg=GOLD, bg=BG_DARK,
+        ).pack(anchor="w")
+        tk.Label(
+            outer, text="Final Results",
+            font=("Helvetica", 32, "bold"), fg=FG_WHITE, bg=BG_DARK,
+        ).pack(anchor="w", pady=(4, 18))
 
         winner = data.get("winner", "???")
+        winner_panel = self._make_panel(outer, bg=BG_PANEL, padx=22, pady=20)
+        winner_panel.pack(fill=tk.X)
+        winner_inner = self._panel_inner(winner_panel)
         tk.Label(
-            frame, text=f"Winner:  {winner}",
-            font=("Helvetica", 22, "bold"), fg="#2ecc71", bg=BG_DARK,
-        ).pack(pady=(0, 20))
+            winner_inner, text="Champion",
+            font=("Helvetica", 13, "bold"), fg=GOLD, bg=BG_PANEL,
+        ).pack(anchor="w")
+        tk.Label(
+            winner_inner, text=winner,
+            font=("Helvetica", 26, "bold"), fg="#7CFFB2", bg=BG_PANEL,
+        ).pack(anchor="w", pady=(6, 0))
 
         # -- Final leaderboard --
-        lb_frame = tk.Frame(frame, bg=BG_PANEL, bd=2, relief="groove")
-        lb_frame.pack(padx=20, pady=10)
+        leaderboard_panel = self._make_panel(outer, bg=BG_CARD, padx=18, pady=18)
+        leaderboard_panel.pack(fill=tk.X, pady=(16, 0))
+        lb_frame = self._panel_inner(leaderboard_panel)
 
         for c, header in enumerate(["Rank", "Player", "Score", "Total Time"]):
             tk.Label(
                 lb_frame, text=header, font=("Helvetica", 12, "bold"),
-                fg="#f1c40f", bg=BG_PANEL, width=14,
+                fg=GOLD, bg=BG_CARD, width=14,
             ).grid(row=0, column=c, padx=5, pady=5)
 
         for entry in data.get("final_leaderboard", []):
@@ -558,18 +883,24 @@ class ReactionRushClient:
                 format_ms(entry["total_reaction_time_ms"]),
             ]
             for c, v in enumerate(vals):
+                cell_bg = BG_CARD_ALT if r % 2 == 1 else BG_CARD
                 tk.Label(
                     lb_frame, text=v, font=("Helvetica", 12),
-                    fg=FG_WHITE, bg=BG_PANEL, width=14,
+                    fg=FG_WHITE, bg=cell_bg, width=14,
                 ).grid(row=r, column=c, padx=5, pady=3)
 
         # -- Quit button --
         self._make_button(
-            frame,
+            outer,
             text="Quit",
             width=14,
             command=self._on_closing,
-        ).pack(pady=(20, 0))
+        ).pack(anchor="w", pady=(20, 0))
+
+        if data.get("winner") == self.player_name:
+            self._show_overlay_message("You Win!", "#7CFFB2")
+        else:
+            self._show_overlay_message("You Lose!", "#ff7a7a")
 
     # -----------------------------------------------------------------------
     # Network: receiver thread + queue polling
@@ -659,10 +990,23 @@ class ReactionRushClient:
     def _on_game_start(self, msg: dict) -> None:
         self.total_rounds = msg.get("total_rounds", 5)
         self._clear()
+        splash = self._make_panel(self.container, bg=BG_PANEL, padx=28, pady=28)
+        splash.place(relx=0.5, rely=0.5, anchor="center", width=420, height=220)
+        self._current_screen = splash
+        inner = self._panel_inner(splash)
         tk.Label(
-            self.container, text="Game starting \u2026",
-            font=("Helvetica", 32, "bold"), fg=FG_WHITE, bg=BG_DARK,
-        ).place(relx=0.5, rely=0.5, anchor="center")
+            inner, text="Reaction Rush",
+            font=("Helvetica", 16, "bold"), fg=GOLD, bg=BG_PANEL,
+        ).pack(anchor="center")
+        tk.Label(
+            inner, text="Game starting \u2026",
+            font=("Helvetica", 30, "bold"), fg=FG_WHITE, bg=BG_PANEL,
+        ).pack(pady=(18, 10))
+        tk.Label(
+            inner,
+            text=f"Get ready for {self.total_rounds} fast rounds.",
+            font=("Helvetica", 12), fg=FG_LIGHT, bg=BG_PANEL,
+        ).pack()
 
     def _on_round_prepare(self, msg: dict) -> None:
         rnd   = msg.get("round_number", 1)
