@@ -1,3 +1,0 @@
-This directory is reserved for optional game assets (images, sounds, etc.).
-The current version of Reaction Rush uses only Tkinter's built-in drawing
-primitives, so no external assets are required.
