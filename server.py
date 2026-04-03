@@ -1,30 +1,10 @@
-"""
-server.py — TCP game server for Reaction Rush.
+"""TCP server for the Reaction Rush game.
 
-Responsibilities
-----------------
-* Listen for incoming TCP connections on a configurable host/port.
-* Validate a lobby access code so only intended players can join.
-* Manage a lobby: track names, ready states, broadcast updates.
-* Run a fair 5-round reaction game with server-controlled timing.
-* Compute scores, maintain a leaderboard, and declare a winner.
-* Handle disconnects gracefully mid-lobby and mid-game.
-
-Usage
------
+Run with:
     python server.py --host 127.0.0.1 --port 5000 --access-code RED123 --min-players 2
 
-Architecture
-------------
-* **Main thread** — accepts connections in a loop.
-* **Per-client thread** — reads messages from one client; routes them to
-  the appropriate handler while holding ``self.lock`` where needed.
-* **Game thread** — spawned when all players are ready; controls round
-  timing, broadcasts GO signals, and collects results.
-
-All shared state (player dicts, round data) is protected by a single
-``threading.Lock`` so that concurrent client handlers and the game
-thread never corrupt data.
+The server accepts player connections, manages the lobby, runs the rounds,
+and sends results back to every client.
 """
 
 import argparse
@@ -362,6 +342,8 @@ class GameServer:
         having responded so the game thread is not left waiting forever.
         If fewer than 2 players remain mid-game, the match ends.
         """
+        end_game = False
+
         with self.lock:
             p = self.players.get(pid)
             if p is None or not p.connected:
@@ -391,11 +373,14 @@ class GameServer:
                 if p.joined and p.connected
             )
             if self.game_started and active < 2:
-                self._broadcast(make_message(
-                    MSG_ERROR,
-                    message="Not enough players remaining. Game ending."))
                 self.round_phase = "done"
                 self.all_responded.set()
+                end_game = True
+
+        if end_game:
+            self._broadcast(make_message(
+                MSG_ERROR,
+                message="Not enough players remaining. Game ending."))
 
         # A non-ready player leaving may satisfy the start condition
         if not self.game_started:

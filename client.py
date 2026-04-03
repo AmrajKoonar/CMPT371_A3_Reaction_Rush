@@ -134,6 +134,34 @@ class ReactionRushClient:
         self.connect_status_label = None
         self._ready_btn = None
 
+    def _make_button(
+        self,
+        parent: tk.Widget,
+        text: str,
+        command,
+        width: int,
+    ) -> tk.Button:
+        """Create a button with clearer borders and text on macOS."""
+        return tk.Button(
+            parent,
+            text=text,
+            font=("Helvetica", 13, "bold"),
+            bg="#ffffff",
+            fg="#000000",
+            activebackground="#ffffff",
+            activeforeground="#000000",
+            disabledforeground="#000000",
+            width=width,
+            command=command,
+            relief="raised",
+            bd=3,
+            highlightthickness=2,
+            highlightbackground="#000000",
+            highlightcolor="#000000",
+            padx=8,
+            pady=4,
+        )
+
     # -----------------------------------------------------------------------
     # Connect screen
     # -----------------------------------------------------------------------
@@ -175,10 +203,11 @@ class ReactionRushClient:
             self._entries.append(entry)
 
         # Connect button
-        tk.Button(
-            frame, text="Connect", font=("Helvetica", 13, "bold"),
-            bg=BTN_BLUE, fg=FG_WHITE, activebackground="#2980b9",
-            width=18, command=self._do_connect,
+        self._make_button(
+            frame,
+            text="Connect",
+            width=18,
+            command=self._do_connect,
         ).grid(row=len(labels) + 2, column=0, columnspan=2, pady=(15, 5))
 
         # Status message (errors, "Connecting…", etc.)
@@ -293,10 +322,11 @@ class ReactionRushClient:
         bottom = tk.Frame(self.container, bg=BG_DARK)
         bottom.pack(fill=tk.X, padx=20, pady=(5, 20))
 
-        self._ready_btn = tk.Button(
-            bottom, text="Ready", font=("Helvetica", 14, "bold"),
-            bg=BTN_GREEN, fg=FG_WHITE, activebackground="#27ae60",
-            width=14, command=self._do_ready,
+        self._ready_btn = self._make_button(
+            bottom,
+            text="Ready",
+            width=14,
+            command=self._do_ready,
         )
         self._ready_btn.pack()
 
@@ -534,9 +564,10 @@ class ReactionRushClient:
                 ).grid(row=r, column=c, padx=5, pady=3)
 
         # -- Quit button --
-        tk.Button(
-            frame, text="Quit", font=("Helvetica", 13, "bold"),
-            bg="#e74c3c", fg=FG_WHITE, width=14,
+        self._make_button(
+            frame,
+            text="Quit",
+            width=14,
             command=self._on_closing,
         ).pack(pady=(20, 0))
 
