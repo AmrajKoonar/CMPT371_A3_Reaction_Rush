@@ -7,7 +7,7 @@
 
 ## **Group Members**
 
-| Name | Student ID | Email | Username |
+| Name | Student ID | Email | GitHub Username |
 | :---- | :---- | :---- | :---- |
 | Geonwoo Park | 301635420 | gpa40@sfu.ca | GitHub Username : aidenplabs |
 | Amraj Koonar | 301559468 | ask36@sfu.ca | GitHub Username : AmrajKoonar |
