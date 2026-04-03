@@ -12,6 +12,21 @@
 | Geonwoo Park | 301635420 | gpa40@sfu.ca | aidenplabs |
 | Amraj Koonar | 301559468 | ask36@sfu.ca | AmrajKoonar |
 
+## Architecture Overview
+
+```
+┌───────────────┐        TCP / JSON + newline          ┌────────────────┐
+│  Client (Tk)  │ ◄──────────────────────────────────► │  Game Server   │
+│  client.py    │        port 5000 (default)           │  server.py     │
+└───────────────┘                                      └────────────────┘
+       ▲                                                      ▲
+       │  imports                                             │  imports
+       ▼                                                      ▼
+  protocol.py   utils.py                          protocol.py   utils.py
+                                                  game_logic.py
+```
+
+
 ## **1. Project Overview & Description**
 
 This project is a multiplayer reaction game built using Python's Socket API with
@@ -146,7 +161,14 @@ JSON messages over TCP.
   * Server sends: `{"type": "round_result", ...}`  
   * Server sends: `{"type": "game_over", ...}`  
 
-## **8. Academic Integrity & References**
+## **8. Troubleshooting**
+
+- If you get `Connection refused`, make sure the server is running first.
+- If the game does not start, make sure at least 2 players are connected and both clicked `Ready`.
+- If Tkinter is missing on Linux, install it with `sudo apt install python3-tk`.
+- If the port is already in use, change the port number and use the same port in both clients.
+
+## **9. Academic Integrity & References**
 
 * **Code Origin:**  
   * The project was built as a Python socket programming assignment using TCP sockets, threading, Tkinter, and JSON message passing.
