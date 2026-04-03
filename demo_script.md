@@ -1,55 +1,109 @@
 # Reaction Rush — 2-Minute Demo Script
 
-This document outlines a short demonstration of the Reaction Rush multiplayer
-reaction-time game. It is designed to fit within a **2-minute video** and
-covers all key deliverables: connection setup, data exchange, gameplay, and
-clean termination.
+This document outlines a short demo plan for the Reaction Rush multiplayer
+TCP game. The goal is to clearly show that the code runs, establishes
+connections, exchanges gameplay data correctly, and handles termination
+cleanly within the 2-minute limit.
 
 ---
 
 ## Setup Before Recording
 
-1. Have **three** terminal / command-prompt windows open and arranged so they
-   are all visible (or use split-screen).
-2. Verify Python 3.8+ is installed (`python --version`).
-3. `cd` into the project directory in all three terminals.
+1. Open one server terminal and two client terminals.
+2. Arrange the server terminal and both client windows so they are visible in
+   the recording at the same time whenever possible.
+3. Verify that Python 3.9+ is available.
+4. In each terminal, move to the project directory.
+5. Keep the server terminal font large enough that the logs are readable in
+   the final video.
 
 ---
 
-## Demo Sequence
+## Recommended Demo Flow
 
-| Time | Action | What to show / say |
-|---|---|---|
-| **0:00** | **Start the server** | Run `python server.py --host 127.0.0.1 --port 5000 --access-code RED123 --min-players 2`. Point out the log output confirming the server is listening. |
-| **0:10** | **Launch Client 1** | Run `python client.py`. Fill in Host, Port, Access Code, and Player Name (e.g., "Alice"). Click **Connect**. Show the lobby screen and that Alice appears in the player list. |
-| **0:25** | **Launch Client 2** | Run `python client.py` in the third terminal. Connect as "Bob" with the same access code. Show that both Alice and Bob are now visible in each other's lobby. |
-| **0:35** | **Ready up** | Click **Ready** on both clients. Point out the server log showing both players are ready and that the game is starting. |
-| **0:45** | **Round 1 — gameplay** | Both clients show the red screen ("Wait for green…"). After the random delay, the screen turns green ("Click!"). Click on each client. Show the round results and leaderboard that appear afterwards. |
-| **1:05** | **Round 2 — false start** | On one client, deliberately click **during the red screen** before green appears. Show the orange penalty screen ("Penalty: Too soon!"). Point out that the round results give 0 points for the false start. |
-| **1:25** | **Skip to final results** | Let the remaining rounds play out (fast-forward or cut in editing if needed). After Round 5, show the **Game Over** screen with the final leaderboard and winner announcement. |
-| **1:40** | **Client quit** | Click the **Quit** button on one client. Show the server log indicating the player disconnected. |
-| **1:50** | **Server shutdown** | Press **Ctrl+C** in the server terminal. Show the graceful shutdown message and the remaining client receiving a disconnect notification. |
-| **2:00** | **End** | Summarise: "We demonstrated TCP connection setup, lobby management, real-time gameplay with server-controlled fairness, false-start handling, leaderboard updates, and clean disconnection for both client and server." |
+1. **Start the server**
+   Run:
+   ```bash
+   python3 server.py --host 127.0.0.1 --port 5000 --access-code RED123 --min-players 2
+   ```
+   Show the server log confirming that it is listening and waiting for players.
+
+2. **Connect Client 1**
+   Run:
+   ```bash
+   python3 client.py
+   ```
+   Enter the host, port, access code, and a player name such as `Alice`.
+   Click `Connect` and show that the player appears in the lobby.
+
+3. **Connect Client 2**
+   Run:
+   ```bash
+   python3 client.py
+   ```
+   Enter the same host, port, and access code, but use a different player
+   name such as `Bob`. Show that both players are visible in the same lobby.
+
+4. **Show lobby synchronization**
+   Click `Ready` on both clients and show that the game starts only after all
+   connected players are ready. Keep the server log visible so the transition
+   from lobby to game is easy to follow.
+
+5. **Demonstrate a normal round**
+   Show one round where both players wait during the red screen, react after
+   the green screen appears, and then receive the round results and updated
+   leaderboard.
+
+6. **Demonstrate a false start**
+   In the next round, intentionally click during the red screen on one client.
+   Show the orange penalty feedback and then show the round results where the
+   false-starting player receives 0 points.
+
+7. **Show the final game result**
+   Let the remaining rounds continue, or trim / fast-forward them in editing if
+   needed. Show the `Game Over` screen, the final leaderboard, and the winner.
+
+8. **Demonstrate clean client termination**
+   Click the `Quit` button on one client and show the server logging that the
+   player disconnected.
+
+9. **Demonstrate clean server termination**
+   Press `Ctrl+C` in the server terminal and show the remaining client
+   receiving the disconnect notification.
+
+---
+
+## What the Video Should Prove
+
+- The application runs successfully without setup confusion.
+- The server and clients establish TCP connections correctly.
+- The application exchanges lobby, gameplay, scoring, and final-result data.
+- The server handles timing, penalties, leaderboard updates, and winner
+  selection.
+- The system handles disconnects and shutdown cleanly.
 
 ---
 
 ## Suggested Voiceover Lines
 
-1. *"We start the server on localhost port 5000 with access code RED123."*
-2. *"Alice connects and enters the lobby. The server confirms her join."*
-3. *"Bob joins the same lobby. Both players can see each other."*
-4. *"Both players click Ready. The server detects that the minimum player count is met and starts the game."*
-5. *"Round 1: the screen is red — we must wait. Now it's green — click! The server measures our reaction times and awards scores."*
-6. *"In Round 2, I'll deliberately click too early to show the false-start penalty. The orange screen confirms the penalty, and I receive zero points."*
-7. *"After five rounds, the final leaderboard shows the winner."*
-8. *"We close the client cleanly, and the server logs the disconnection. Finally, Ctrl+C shuts down the server gracefully."*
+1. *"This project is a TCP client-server multiplayer reaction game built in Python."*
+2. *"We start the server first, then connect two clients to the same lobby using the same access code."*
+3. *"The lobby updates in real time as players join and mark themselves ready."*
+4. *"The game begins only when all connected players are ready."*
+5. *"In each round, the server controls the timing and the clients react when the screen turns green."*
+6. *"After each round, the server sends the results and the updated leaderboard to both clients."*
+7. *"Here we demonstrate a false start, where clicking during the red screen triggers a penalty and gives 0 points."*
+8. *"At the end of the game, the final leaderboard and winner are displayed."*
+9. *"We also demonstrate clean client disconnect and graceful server shutdown."*
 
 ---
 
-## Tips for Recording
+## Recording Tips
 
-* Use **localhost** (`127.0.0.1`) so there is no noticeable network latency.
-* Arrange windows side-by-side so the grader can see both clients and the
-  server simultaneously.
-* If the video needs to be shorter, you can fast-forward the middle rounds
-  and focus on Rounds 1, 2, and 5.
+- Use `127.0.0.1` so latency does not distract from the demo.
+- Keep all important windows visible at the same time whenever possible.
+- Use short player names so the UI is easy to read.
+- If the full match feels too long on video, keep the normal round, the
+  false-start round, and the final results, then trim repetitive middle parts.
+- Stay under the 2-minute limit with a small buffer instead of aiming exactly
+  at 120 seconds.
