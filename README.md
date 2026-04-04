@@ -67,7 +67,7 @@ and edge cases in the current project scope:
 Our 2-minute video demonstration covering connection establishment, data
 exchange, gameplay cases, and clean termination is included below:
 
-[Reaction Rush Video Demo](./Reaction_Rush_video.mp4)
+[Reaction Rush Video Demo](https://youtu.be/u54Tu0snZV0)
 
 
 ## **4. Prerequisites (Fresh Environment)**
