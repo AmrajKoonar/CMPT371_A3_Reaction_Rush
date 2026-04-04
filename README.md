@@ -173,8 +173,9 @@ JSON messages over TCP.
   * The networking logic, client-server protocol, lobby flow, scoring, and GUI were implemented by the group, with course materials and Python documentation used as references.
 
 * **GenAI Usage:**
-  * ChatGPT was used to help reorganize and polish parts of the `README.md`, help in debugging, cleaning up code (for readability), and clarifying and explaining unclear technical concepts related to client.py, server.py, game_logic.py, and protocol.py
+  * ChatGPT was used to help reorganize and polish parts of the `README.md`, help in debugging, cleaning up code (for readability), and clarifying and explaining unclear technical concepts related to client.py, server.py, game_logic.py, and protocol.py.
   * Codex was used to help create the demo video subtitles and assist with some UI/interface improvements, including result/status wording, feedback messages, and simple animation/presentation in the client interface.
+  * All final code was written, implemented, and reviewed by us to ensure AI integrity was upheld.
 
 * **References:**
   * [Human Benchmark: Reaction Time Test](https://humanbenchmark.com/tests/reactiontime)
