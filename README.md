@@ -65,8 +65,10 @@ and edge cases in the current project scope:
 ## **3. Video Demo**
  
 Our 2-minute video demonstration covering connection establishment, data
-exchange, gameplay, and process termination can be viewed below:  
-[**Add video link here**]
+exchange, gameplay cases, and clean termination is included below:
+
+[Reaction Rush Video Demo](./Reaction_Rush_video.mp4)
+
 
 ## **4. Prerequisites (Fresh Environment)**
 
@@ -172,7 +174,7 @@ JSON messages over TCP.
 
 * **GenAI Usage:**
   * ChatGPT was used to help reorganize and polish parts of the `README.md`.
-  * Codex was used to assist with some UI/interface improvements, including result/status wording, feedback messages, and simple animation/presentation in the client interface.
+  * Codex was used to help create the demo video subtitles and assist with some UI/interface improvements, including result/status wording, feedback messages, and simple animation/presentation in the client interface.
 
 * **References:**
   * [Human Benchmark: Reaction Time Test](https://humanbenchmark.com/tests/reactiontime)
