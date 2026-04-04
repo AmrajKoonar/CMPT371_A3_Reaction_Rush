@@ -125,12 +125,12 @@ click `Connect` and `Ready`.
 
 ### **Step 4: Gameplay**
 
-1. Once at least 2 players are ready, the server starts the game automatically.  
-2. Each round begins with a red screen.  
-3. Wait until the screen turns green, then click.  
-4. If a player clicks too early, that player gets a false start penalty.  
-5. After each round, the server sends the round results and leaderboard.  
-6. After 5 rounds, the final winner is shown.  
+1. Once at least 2 players are ready, the server starts the game automatically.
+2. Each round begins with a red screen.
+3. Wait until the screen turns green, then click.
+4. If a player clicks too early, that player gets a false start penalty.
+5. After each round, the server sends the round results and leaderboard.
+6. After 5 rounds, the final winner is shown.
 
 ## **6. Connection / Data Exchange / Termination**
 
@@ -165,6 +165,7 @@ JSON messages over TCP.
 - If the game does not start, make sure all connected players are `Ready` (at least 2 players).
 - If Tkinter is missing on Linux, install it with `sudo apt install python3-tk`.
 - If the port is already in use, change the port number and use the same port in both clients.
+- If you get `Game already in progress` while trying to join then restart the server.
 
 ## **9. Academic Integrity & References**
 
