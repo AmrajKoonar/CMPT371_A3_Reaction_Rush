@@ -15,6 +15,7 @@ import queue
 import socket
 import threading
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import messagebox
 from typing import Optional
 
@@ -75,7 +76,9 @@ class ReactionRushClient:
 
         # Widget references that get reused across different screens
         self.game_frame: Optional[tk.Frame] = None
+        self.game_panel: Optional[tk.Frame] = None
         self.game_label: Optional[tk.Label] = None
+        self.game_label_font: Optional[tkfont.Font] = None
         self.round_info_label: Optional[tk.Label] = None
         self.game_hint_label: Optional[tk.Label] = None
         self.lobby_players_frame: Optional[tk.Frame] = None
@@ -102,7 +105,9 @@ class ReactionRushClient:
         for w in self.container.winfo_children():
             w.destroy()
         self.game_frame = None
+        self.game_panel = None
         self.game_label = None
+        self.game_label_font = None
         self.round_info_label = None
         self.game_hint_label = None
         self.lobby_players_frame = None
@@ -183,6 +188,31 @@ class ReactionRushClient:
             highlightcolor=BTN_BLUE,
             bd=0,
         )
+
+    def _fit_game_label_text(self) -> None:
+        """Shrink the reaction-screen headline so it fits across platforms."""
+        if (
+            self.game_panel is None
+            or self.game_label is None
+            or self.game_label_font is None
+        ):
+            return
+
+        panel_width = self.game_panel.winfo_width()
+        if panel_width <= 1:
+            return
+
+        text = str(self.game_label.cget("text"))
+        available_width = max(panel_width - 60, 120)
+
+        for size in range(48, 23, -2):
+            self.game_label_font.configure(size=size)
+            if self.game_label_font.measure(text) <= available_width:
+                break
+
+    def _on_game_panel_resize(self, _event: object = None) -> None:
+        """Re-fit the headline whenever the reaction panel changes size."""
+        self._fit_game_label_text()
 
     def _show_overlay_message(
         self,
@@ -605,11 +635,15 @@ class ReactionRushClient:
             highlightthickness=3,
             highlightbackground=FG_WHITE,
         )
-        center_panel.place(relx=0.5, rely=0.5, anchor="center", width=520, height=250)
+        center_panel.place(relx=0.5, rely=0.5, anchor="center", relwidth=0.72, height=250)
+        center_panel.bind("<Configure>", self._on_game_panel_resize)
+        self.game_panel = center_panel
+
+        self.game_label_font = tkfont.Font(family="Helvetica", size=48, weight="bold")
 
         self.game_label = tk.Label(
             center_panel, text="Wait for green \u2026",
-            font=("Helvetica", 48, "bold"), fg=FG_WHITE, bg=RED_SCREEN,
+            font=self.game_label_font, fg=FG_WHITE, bg=RED_SCREEN,
         )
         self.game_label.place(relx=0.5, rely=0.42, anchor="center")
         tk.Label(
@@ -638,6 +672,7 @@ class ReactionRushClient:
                 for child in parent.winfo_children():
                     if isinstance(child, tk.Label):
                         child.config(bg=bg)
+            self._fit_game_label_text()
         if self.game_hint_label is not None:
             hint = "Wait for green"
             if bg == GREEN_SCREEN:
