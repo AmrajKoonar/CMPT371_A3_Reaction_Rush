@@ -80,15 +80,17 @@
 
 ## Screenshots
 
-> Placeholders — drop real captures into `assets/` and they'll render here.
-
 | Landing | Lobby | Join |
 | :---: | :---: | :---: |
-| `assets/reaction_rush_homepage.JPG` | `assets/reaction_rush_lobby.JPG` | `reaction_rush_join.JPG` |
+| ![Landing screen](assets/reaction_rush_homepage.JPG) | ![Lobby screen](assets/reaction_rush_lobby.JPG) | ![Join screen](assets/reaction_rush_join.JPG) |
 
-| Game Over (Podium) | Create Game
+| Create Room | Wait (Red) | Click (Green) |
 | :---: | :---: | :---: |
-| `assets/reaction_rush_finish.JPG` | `assets/reaction_rush_join.JPG` |
+| ![Create room screen](assets/reaction_rush_create_game.JPG) | ![Red wait screen](assets/reaction_rush_red.JPG) | ![Green click screen](assets/reaction_rush_green.JPG) |
+
+| False Start (Penalty) | Game Over |
+| :---: | :---: |
+| ![Penalty screen](assets/reaction_rush_yellow.JPG) | ![Final results and podium](assets/reaction_rush_finish.JPG) |
 
 ---
 
