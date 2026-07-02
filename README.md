@@ -1,4 +1,4 @@
-# Reaction Rush v2 — A TCP Multiplayer Reaction Game
+# Reaction Rush v2: A TCP Multiplayer Reaction Game
 
 > **Reaction Rush** is a real-time multiplayer reaction-time battle built on raw
 > **Python TCP sockets** with a polished **Tkinter** desktop client. Race friends
@@ -8,9 +8,9 @@
 **Course:** CMPT 371 — Data Communications & Networking
 **Instructor:** Mirza Zaeem Baig · **Semester:** Spring 2026
 
-> **v2 in one line:** multiple rooms, five game modes, server-side bots, an
+> **v2 updates:** multiple rooms, five game modes, server-side bots, an
 > offline practice mode, latency compensation, heartbeat + reconnect, SQLite
-> stats, a modern themed UI, a test suite, CI, and Docker — all while the
+> stats, a modern themed UI, a test suite, CI, and Docker: all while the
 > original v1 run commands still work unchanged.
 
 ---
@@ -522,7 +522,7 @@ See [`demo_script.md`](demo_script.md) for the scene-by-scene plan.
 
 ---
 
-## Academic Integrity & References
+## Academic Integrity & References (v1)
 
 - **No Flask / no web frameworks.** This is a pure Python **socket** application
   over **TCP**, with a **Tkinter** GUI client.
