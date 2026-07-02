@@ -1,11 +1,14 @@
-# Reaction Rush — Python dependencies
+# Reaction Rush v2 — runtime dependencies
 #
-# This project uses ONLY the Python standard library.
-# No third-party packages are required.
+# The GAME ITSELF (server + client) uses ONLY the Python standard library:
+#   socket, threading, queue, time, json, random, argparse, sqlite3,
+#   tkinter, dataclasses, typing, logging, uuid, statistics
 #
-# Modules used:
-#   socket, threading, queue, time, json, random, argparse,
-#   tkinter, dataclasses, typing, traceback
+# No third-party packages are required to run the server or the client.
 #
-# If you are on Linux and Tkinter is not installed:
+# On Linux, Tkinter may need to be installed separately:
 #   sudo apt install python3-tk
+#
+# ---------------------------------------------------------------------------
+# Development / testing only (NOT needed to play):
+#   pip install -r requirements-dev.txt

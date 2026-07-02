@@ -1,0 +1,4 @@
+# Reaction Rush v2 — development dependencies (tests + CI)
+#
+# Install with:  pip install -r requirements-dev.txt
+pytest>=7.0

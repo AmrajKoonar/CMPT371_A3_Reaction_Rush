@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reaction-rush"
+version = "2.0.0"
+description = "Reaction Rush v2 — a TCP multiplayer reaction game (Python + Tkinter)"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [
+    { name = "Reaction Rush Team" },
+]
+keywords = ["game", "tcp", "sockets", "tkinter", "multiplayer", "cmpt371"]
+# The game uses only the Python standard library — no runtime dependencies.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+reaction-rush-server = "reaction_rush.server_app:main"
+reaction-rush-client = "reaction_rush.client_app:main"
+
+[tool.setuptools.packages.find]
+include = ["reaction_rush*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q"

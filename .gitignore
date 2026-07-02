@@ -27,3 +27,15 @@ build/
 
 # Miscellaneous
 *.log
+
+# Reaction Rush runtime artifacts
+*.db
+reaction_rush.db
+reaction_rush_practice.db
+reaction_rush_client.json
+.env
+
+# Test / tooling caches
+.pytest_cache/
+.coverage
+htmlcov/
