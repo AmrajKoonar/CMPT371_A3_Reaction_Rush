@@ -82,13 +82,13 @@
 
 > Placeholders — drop real captures into `assets/` and they'll render here.
 
-| Landing | Lobby | Reaction |
+| Landing | Lobby | Join |
 | :---: | :---: | :---: |
-| `assets/screenshot_landing.png` | `assets/screenshot_lobby.png` | `assets/screenshot_game.png` |
+| `assets/reaction_rush_homepage.JPG` | `assets/reaction_rush_lobby.JPG` | `reaction_rush_join.JPG` |
 
-| Round Results | Game Over (Podium) | Practice |
+| Game Over (Podium) | Create Game
 | :---: | :---: | :---: |
-| `assets/screenshot_results.png` | `assets/screenshot_gameover.png` | `assets/screenshot_practice.png` |
+| `assets/reaction_rush_finish.JPG` | `assets/reaction_rush_join.JPG` |
 
 ---
 
